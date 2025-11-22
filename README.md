@@ -130,7 +130,7 @@ Following [golang-standards/project-layout](https://github.com/golang-standards/
 
 ```
 pmeonline/
-├── cmd/                          # Application entry points (thin wrappers)
+├── cmd/                         # Application entry points (thin wrappers)
 │   ├── eclearapi/
 │   │   ├── main.go              # ✅ ONLY main.go entry point
 │   │   ├── Dockerfile           # Container image
@@ -149,7 +149,7 @@ pmeonline/
 │       ├── Dockerfile           # Container image
 │       └── readme.md
 │
-├── internal/                     # Private application code (unexportable)
+├── internal/                    # Private application code (unexportable)
 │   ├── eclearapi/
 │   │   └── handler/             # HTTP handlers, eClear client
 │   ├── pmeapi/
@@ -176,7 +176,7 @@ pmeonline/
 │       ├── matcher.go           # Matching algorithm
 │       └── tradegen.go          # Trade & contract generator
 │
-├── web/                          # Web assets (static files)
+├── web/                         # Web assets (static files)
 │   └── static/
 │       ├── eclearapi/           # eClear API dashboard
 │       │   ├── index.html
@@ -187,26 +187,29 @@ pmeonline/
 │           ├── css/
 │           └── js/
 │
-├── tests/                        # Integration & E2E tests
+├── tests/                       # Integration & E2E tests
 │   ├── eclearapi/
 │   │   ├── testdata/            # Sample test data (JSON fixtures)
 │   │   └── test.sh              # Integration test script
 │   └── pmeapi/
 │
-├── docs/                         # Documentation
+├── docs/                        # Documentation
 │   ├── design.md                # System design specification
 │   ├── deployment.md            # Production deployment guide
-│   ├── eclearapi/               # eClear API docs
-│   └── pmeoms/                  # OMS docs
+│   ├── eclearapi/               # eClear API specific documentation
+│   │   ├── DASHBOARD.md         # Web dashboard usage guide
+│   │   └── SETTINGS_API.md      # Settings API (Parameters, Holidays, SessionTime)
+│   └── pmeoms/                  # OMS specific documentation
+│       └── RISK_AND_OMS_IMPLEMENTATION.md  # Risk management & matching engine details
 │
-├── configs/                      # Configuration files
-├── scripts/                      # Build & utility scripts
+├── configs/                     # Configuration files
+├── scripts/                     # Build & utility scripts
 │
-├── docker-compose.yml            # Local development setup
-├── Makefile                      # Build commands
-├── .dockerignore                 # Docker build exclusions
-├── go.mod                        # Go module definition
-└── README.md                     # This file
+├── docker-compose.yml           # Local development setup
+├── Makefile                     # Build commands
+├── .dockerignore                # Docker build exclusions
+├── go.mod                       # Go module definition
+└── README.md                    # This file
 ```
 
 **Key Principles:**
