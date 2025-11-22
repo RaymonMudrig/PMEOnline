@@ -1,0 +1,32 @@
+[
+  {
+    "code": "YU",
+    "name": "Yuanta Securities Indonesia",
+    "borr_eligibility": true,
+    "lend_eligibility": true
+  },
+  {
+    "code": "AA",
+    "name": "Ashmore Asset Management Indonesia",
+    "borr_eligibility": true,
+    "lend_eligibility": true
+  },
+  {
+    "code": "BB",
+    "name": "Bahana Securities",
+    "borr_eligibility": true,
+    "lend_eligibility": true
+  },
+  {
+    "code": "CC",
+    "name": "CGS-CIMB Securities Indonesia",
+    "borr_eligibility": true,
+    "lend_eligibility": false
+  },
+  {
+    "code": "DD",
+    "name": "Danareksa Sekuritas",
+    "borr_eligibility": false,
+    "lend_eligibility": true
+  }
+]

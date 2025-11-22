@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PME WebSocket Test Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status.connected {
+            background-color: #10b981;
+            color: white;
+        }
+
+        .status.disconnected {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        .status.connecting {
+            background-color: #f59e0b;
+            color: white;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button.primary {
+            background-color: #3b82f6;
+            color: white;
+        }
+
+        button.primary:hover {
+            background-color: #2563eb;
+        }
+
+        button.danger {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        button.danger:hover {
+            background-color: #dc2626;
+        }
+
+        button.secondary {
+            background-color: #6b7280;
+            color: white;
+        }
+
+        button.secondary:hover {
+            background-color: #4b5563;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat {
+            background: #f3f4f6;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .notifications {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .notifications h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .notification {
+            background: #f9fafb;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+
+        .notification.error {
+            border-left-color: #ef4444;
+            background: #fef2f2;
+        }
+
+        .notification-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .notification-type {
+            font-weight: bold;
+            color: #3b82f6;
+        }
+
+        .notification.error .notification-type {
+            color: #ef4444;
+        }
+
+        .notification-time {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .notification-data {
+            background: white;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #6b7280;
+            padding: 40px;
+        }
+
+        .filter-group {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .filter-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .filter-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .filter-button {
+            padding: 5px 12px;
+            font-size: 12px;
+            background: #e5e7eb;
+            color: #333;
+            border: 2px solid transparent;
+        }
+
+        .filter-button.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>PME WebSocket Test Client</h1>
+            <span id="status" class="status disconnected">Disconnected</span>
+        </div>
+
+        <div class="controls">
+            <div class="button-group">
+                <button id="connectBtn" class="primary">Connect</button>
+                <button id="disconnectBtn" class="danger" disabled>Disconnect</button>
+                <button id="clearBtn" class="secondary">Clear Notifications</button>
+            </div>
+
+            <div class="input-group">
+                <label for="wsUrl">WebSocket URL:</label>
+                <input type="text" id="wsUrl" value="ws://localhost:8080/ws/notifications" />
+            </div>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-label">Total Received</div>
+                    <div class="stat-value" id="totalCount">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Orders</div>
+                    <div class="stat-value" id="orderCount">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Trades</div>
+                    <div class="stat-value" id="tradeCount">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Contracts</div>
+                    <div class="stat-value" id="contractCount">0</div>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <div class="filter-label">Filter by type:</div>
+                <div class="filter-buttons">
+                    <button class="filter-button active" data-filter="all">All</button>
+                    <button class="filter-button" data-filter="order">Orders</button>
+                    <button class="filter-button" data-filter="trade">Trades</button>
+                    <button class="filter-button" data-filter="contract">Contracts</button>
+                    <button class="filter-button" data-filter="account">Account</button>
+                    <button class="filter-button" data-filter="instrument">Instrument</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="notifications">
+            <h2>Notifications</h2>
+            <div id="notificationList">
+                <div class="empty-state">
+                    No notifications yet. Connect to the WebSocket server and send some orders.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let notifications = [];
+        let currentFilter = 'all';
+        let stats = {
+            total: 0,
+            orders: 0,
+            trades: 0,
+            contracts: 0
+        };
+
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const wsUrlInput = document.getElementById('wsUrl');
+        const notificationListEl = document.getElementById('notificationList');
+
+        // Connect button handler
+        connectBtn.addEventListener('click', () => {
+            const url = wsUrlInput.value.trim();
+            if (!url) {
+                alert('Please enter a WebSocket URL');
+                return;
+            }
+            connect(url);
+        });
+
+        // Disconnect button handler
+        disconnectBtn.addEventListener('click', disconnect);
+
+        // Clear button handler
+        clearBtn.addEventListener('click', () => {
+            notifications = [];
+            stats = { total: 0, orders: 0, trades: 0, contracts: 0 };
+            updateUI();
+        });
+
+        // Filter buttons
+        document.querySelectorAll('.filter-button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                updateUI();
+            });
+        });
+
+        // Connect to WebSocket
+        function connect(url) {
+            try {
+                setStatus('connecting');
+                ws = new WebSocket(url);
+
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    setStatus('connected');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const notification = JSON.parse(event.data);
+                        handleNotification(notification);
+                    } catch (error) {
+                        console.error('Failed to parse notification:', error);
+                        addErrorNotification('Failed to parse: ' + event.data);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    addErrorNotification('WebSocket error occurred');
+                };
+
+                ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    setStatus('disconnected');
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    ws = null;
+                };
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                setStatus('disconnected');
+                alert('Failed to connect to WebSocket: ' + error.message);
+            }
+        }
+
+        // Disconnect from WebSocket
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        // Set connection status
+        function setStatus(status) {
+            statusEl.className = 'status ' + status;
+            statusEl.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        }
+
+        // Handle incoming notification
+        function handleNotification(notification) {
+            notifications.unshift(notification);
+            if (notifications.length > 100) {
+                notifications.pop();
+            }
+
+            // Update stats
+            stats.total++;
+            if (notification.type.includes('order')) stats.orders++;
+            if (notification.type.includes('trade')) stats.trades++;
+            if (notification.type.includes('contract')) stats.contracts++;
+
+            updateUI();
+        }
+
+        // Add error notification
+        function addErrorNotification(message) {
+            notifications.unshift({
+                type: 'error',
+                timestamp: Date.now(),
+                data: { message }
+            });
+            updateUI();
+        }
+
+        // Update UI
+        function updateUI() {
+            // Update stats
+            document.getElementById('totalCount').textContent = stats.total;
+            document.getElementById('orderCount').textContent = stats.orders;
+            document.getElementById('tradeCount').textContent = stats.trades;
+            document.getElementById('contractCount').textContent = stats.contracts;
+
+            // Filter notifications
+            let filtered = notifications;
+            if (currentFilter !== 'all') {
+                filtered = notifications.filter(n => n.type.includes(currentFilter));
+            }
+
+            // Render notifications
+            if (filtered.length === 0) {
+                notificationListEl.innerHTML = '<div class="empty-state">No notifications match the current filter.</div>';
+                return;
+            }
+
+            notificationListEl.innerHTML = filtered.map(n => {
+                const date = new Date(n.timestamp);
+                const timeStr = date.toLocaleString();
+                const dataStr = JSON.stringify(n.data, null, 2);
+                const isError = n.type === 'error';
+
+                return `
+                    <div class="notification ${isError ? 'error' : ''}">
+                        <div class="notification-header">
+                            <span class="notification-type">${n.type}</span>
+                            <span class="notification-time">${timeStr}</span>
+                        </div>
+                        <div class="notification-data">${dataStr}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Auto-connect on page load (optional)
+        // connect(wsUrlInput.value);
+    </script>
+</body>
+</html>

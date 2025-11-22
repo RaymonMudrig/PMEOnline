@@ -1,0 +1,66 @@
+[
+  {
+    "code": "YU-012345",
+    "name": "PT. ABC Investment",
+    "sid": "SIDA1234567890AB",
+    "email": "abc@example.com",
+    "address": "Jakarta Selatan",
+    "participant": "YU"
+  },
+  {
+    "code": "YU-012346",
+    "name": "John Doe",
+    "sid": "SIDB1234567890CD",
+    "email": "john.doe@example.com",
+    "address": "Jakarta Pusat",
+    "participant": "YU"
+  },
+  {
+    "code": "AA-067890",
+    "name": "Jane Smith Investment",
+    "sid": "SIDC1234567890EF",
+    "email": "jane.smith@example.com",
+    "address": "Surabaya",
+    "participant": "AA"
+  },
+  {
+    "code": "AA-067891",
+    "name": "PT. XYZ Capital",
+    "sid": "SIDD1234567890GH",
+    "email": "xyz@example.com",
+    "address": "Bandung",
+    "participant": "AA"
+  },
+  {
+    "code": "BB-123456",
+    "name": "Bob Wilson",
+    "sid": "SIDE1234567890IJ",
+    "email": "bob.wilson@example.com",
+    "address": "Semarang",
+    "participant": "BB"
+  },
+  {
+    "code": "BB-123457",
+    "name": "PT. DEF Holdings",
+    "sid": "SIDF1234567890KL",
+    "email": "def@example.com",
+    "address": "Medan",
+    "participant": "BB"
+  },
+  {
+    "code": "CC-234567",
+    "name": "Charlie Brown Capital",
+    "sid": "SIDG1234567890MN",
+    "email": "charlie@example.com",
+    "address": "Yogyakarta",
+    "participant": "CC"
+  },
+  {
+    "code": "DD-345678",
+    "name": "Diana Prince Fund",
+    "sid": "SIDH1234567890OP",
+    "email": "diana@example.com",
+    "address": "Bali",
+    "participant": "DD"
+  }
+]

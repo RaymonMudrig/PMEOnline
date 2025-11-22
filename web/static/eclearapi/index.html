@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>eClear API - Master Data Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏦 eClear API Dashboard</h1>
+            <p>Master Data Management Interface</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('participants')">👥 Participants</button>
+            <button class="tab" onclick="showTab('instruments')">📊 Instruments</button>
+            <button class="tab" onclick="showTab('accounts')">💼 Accounts</button>
+            <button class="tab" onclick="showTab('parameters')">⚙️ Parameters</button>
+            <button class="tab" onclick="showTab('holidays')">📅 Holidays</button>
+            <button class="tab" onclick="showTab('sessiontime')">🕒 Session Time</button>
+        </div>
+
+        <div id="participants" class="tab-content active">
+            <div class="controls">
+                <button class="btn btn-primary" onclick="loadParticipants()">🔄 Refresh</button>
+                <span id="participants-status" class="status"></span>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Participants</div>
+                    <div class="stat-value" id="participants-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Borrow Eligible</div>
+                    <div class="stat-value" id="participants-borr">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Lend Eligible</div>
+                    <div class="stat-value" id="participants-lend">-</div>
+                </div>
+            </div>
+
+            <div id="participants-table"></div>
+        </div>
+
+        <div id="instruments" class="tab-content">
+            <div class="controls">
+                <button class="btn btn-primary" onclick="loadInstruments()">🔄 Refresh</button>
+                <span id="instruments-status" class="status"></span>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Instruments</div>
+                    <div class="stat-value" id="instruments-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Eligible</div>
+                    <div class="stat-value" id="instruments-eligible">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Ineligible</div>
+                    <div class="stat-value" id="instruments-ineligible">-</div>
+                </div>
+            </div>
+
+            <div id="instruments-table"></div>
+        </div>
+
+        <div id="accounts" class="tab-content">
+            <div class="controls">
+                <button class="btn btn-primary" onclick="loadAccounts()">🔄 Refresh</button>
+                <span id="accounts-status" class="status"></span>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Accounts</div>
+                    <div class="stat-value" id="accounts-count">-</div>
+                </div>
+            </div>
+
+            <div id="accounts-table"></div>
+        </div>
+
+        <div id="parameters" class="tab-content">
+            <h2>System Parameters</h2>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="loadParameters()">🔄 Refresh</button>
+                <span id="parameters-status" class="status"></span>
+            </div>
+
+            <div id="parameters-form" style="margin-top: 20px;">
+                <form id="param-form" onsubmit="saveParameters(event)" style="background: #f8f9fa; padding: 25px; border-radius: 8px; max-width: 800px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Description</label>
+                            <input type="text" id="param-description" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Flat Fee (%)</label>
+                            <input type="number" step="0.01" id="param-flatfee" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Lending Fee (%)</label>
+                            <input type="number" step="0.01" id="param-lendingfee" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Borrowing Fee (%)</label>
+                            <input type="number" step="0.01" id="param-borrowingfee" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Max Quantity</label>
+                            <input type="number" step="1" id="param-maxqty" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Borrow Max Open Days</label>
+                            <input type="number" step="1" id="param-maxdays" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Denomination Limit</label>
+                            <input type="number" step="1" id="param-denomlimit" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button type="submit" class="btn btn-primary" style="padding: 12px 30px; font-size: 16px;">💾 Save Parameters</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="holidays" class="tab-content">
+            <h2>Holidays Management</h2>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="loadHolidays()">🔄 Refresh</button>
+                <span id="holidays-status" class="status"></span>
+            </div>
+
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; margin: 20px 0; max-width: 500px;">
+                <h3 style="margin-bottom: 15px;">Add New Holiday</h3>
+                <form id="holiday-form" onsubmit="addHoliday(event)">
+                    <div style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: end;">
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Date</label>
+                            <input type="date" id="holiday-date" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Description</label>
+                            <input type="text" id="holiday-description" required placeholder="e.g., National Holiday" style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <button type="submit" class="btn btn-primary">➕ Add</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div id="holidays-table"></div>
+        </div>
+
+        <div id="sessiontime" class="tab-content">
+            <h2>Trading Session Time</h2>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="loadSessionTime()">🔄 Refresh</button>
+                <span id="sessiontime-status" class="status"></span>
+            </div>
+
+            <div id="sessiontime-form" style="margin-top: 20px;">
+                <form id="session-form" onsubmit="saveSessionTime(event)" style="background: #f8f9fa; padding: 25px; border-radius: 8px; max-width: 600px;">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Description</label>
+                        <input type="text" id="session-description" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Session 1 Start</label>
+                            <input type="time" step="1" id="session1-start" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Session 1 End</label>
+                            <input type="time" step="1" id="session1-end" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Session 2 Start</label>
+                            <input type="time" step="1" id="session2-start" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Session 2 End</label>
+                            <input type="time" step="1" id="session2-end" required style="width: 100%; padding: 10px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button type="submit" class="btn btn-primary" style="padding: 12px 30px; font-size: 16px;">💾 Save Session Time</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

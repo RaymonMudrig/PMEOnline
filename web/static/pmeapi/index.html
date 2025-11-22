@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APME API - Test Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 APME API Dashboard</h1>
+            <p>Securities Borrowing & Lending Test Interface</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('borrow')">📥 Entry Borrow</button>
+            <button class="tab" onclick="showTab('lend')">📤 Entry Lend</button>
+            <button class="tab" onclick="showTab('orders')">📋 Order List</button>
+            <button class="tab" onclick="showTab('contracts')">📜 Contract List</button>
+            <button class="tab" onclick="showTab('sbl-detail')">📊 SBL Detail</button>
+            <button class="tab" onclick="showTab('sbl-aggregate')">📈 SBL Aggregate</button>
+        </div>
+
+        <!-- Entry Borrow Tab -->
+        <div id="borrow" class="tab-content active">
+            <h2>Submit Borrowing Order</h2>
+            <form id="borrow-form" onsubmit="submitBorrowOrder(event)">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Participant Code *</label>
+                        <select id="borr-participant" required onchange="loadAccountsByParticipant('borr')">
+                            <option value="">-- Select Participant --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Account Code *</label>
+                        <select id="borr-account" required>
+                            <option value="">-- Select Account --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Instrument Code *</label>
+                        <select id="borr-instrument" required>
+                            <option value="">-- Select Instrument --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Quantity (shares) *</label>
+                        <input type="number" id="borr-quantity" required min="1" step="1" placeholder="e.g., 1000">
+                    </div>
+                    <div class="form-group">
+                        <label>Rate *</label>
+                        <input type="text" id="borr-rate" value="18%" readonly style="background-color: #f8f9fa;">
+                    </div>
+                    <div class="form-group">
+                        <label>Settlement Date *</label>
+                        <input type="date" id="borr-settlement" required onchange="calculatePeriodeFromDates('borr')">
+                    </div>
+                    <div class="form-group">
+                        <label>Reimbursement Date *</label>
+                        <input type="date" id="borr-reimbursement" required onchange="calculatePeriodeFromDates('borr')">
+                    </div>
+                    <div class="form-group">
+                        <label>Periode (days) *</label>
+                        <input type="number" id="borr-periode" required min="1" placeholder="e.g., 30" onchange="calculateReimbursementFromPeriode('borr')">
+                    </div>
+                    <div class="form-group">
+                        <label>Auto Roll-Over (ARO) *</label>
+                        <select id="borr-aro" required>
+                            <option value="false">No</option>
+                            <option value="true">Yes</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label>Instruction</label>
+                        <input type="text" id="borr-instruction" placeholder="Optional instructions">
+                    </div>
+                </div>
+                <div class="controls">
+                    <button type="submit" class="btn btn-primary">📥 Submit Borrow Order</button>
+                    <button type="button" class="btn btn-secondary" onclick="resetBorrowForm()">🔄 Reset</button>
+                </div>
+            </form>
+            <div id="borrow-status" class="status" style="display:none;"></div>
+        </div>
+
+        <!-- Entry Lend Tab -->
+        <div id="lend" class="tab-content">
+            <h2>Submit Lending Order</h2>
+            <form id="lend-form" onsubmit="submitLendOrder(event)">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Participant Code *</label>
+                        <select id="lend-participant" required onchange="loadAccountsByParticipant('lend')">
+                            <option value="">-- Select Participant --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Account Code *</label>
+                        <select id="lend-account" required>
+                            <option value="">-- Select Account --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Instrument Code *</label>
+                        <select id="lend-instrument" required>
+                            <option value="">-- Select Instrument --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Quantity (shares) *</label>
+                        <input type="number" id="lend-quantity" required min="1" step="1" placeholder="e.g., 2000">
+                    </div>
+                    <div class="form-group">
+                        <label>Rate *</label>
+                        <input type="text" id="lend-rate" value="15%" readonly style="background-color: #f8f9fa;">
+                    </div>
+                </div>
+                <div class="controls">
+                    <button type="submit" class="btn btn-primary">📤 Submit Lend Order</button>
+                    <button type="button" class="btn btn-secondary" onclick="resetLendForm()">🔄 Reset</button>
+                </div>
+            </form>
+            <div id="lend-status" class="status" style="display:none;"></div>
+        </div>
+
+        <!-- Order List Tab -->
+        <div id="orders" class="tab-content">
+            <h2>Order List</h2>
+            <div class="controls">
+                <input type="text" id="order-participant" placeholder="Participant Code" style="width: 150px;">
+                <input type="text" id="order-sid" placeholder="SID" style="width: 200px;">
+                <select id="order-state" style="width: 120px;">
+                    <option value="">All States</option>
+                    <option value="S">Submitted</option>
+                    <option value="O">Open</option>
+                    <option value="P">Partial</option>
+                    <option value="M">Matched</option>
+                    <option value="W">Withdrawn</option>
+                    <option value="R">Rejected</option>
+                </select>
+                <button class="btn btn-primary" onclick="loadOrders()">🔍 Search</button>
+                <button class="btn btn-secondary" onclick="clearOrderFilters()">✖️ Clear</button>
+            </div>
+            <div id="orders-status" class="status" style="display:none;"></div>
+            <div id="orders-table"></div>
+        </div>
+
+        <!-- Contract List Tab -->
+        <div id="contracts" class="tab-content">
+            <h2>Contract List</h2>
+            <div class="controls">
+                <input type="text" id="contract-participant" placeholder="Participant Code" style="width: 150px;">
+                <input type="text" id="contract-sid" placeholder="SID" style="width: 200px;">
+                <select id="contract-state" style="width: 120px;">
+                    <option value="">All States</option>
+                    <option value="S">Submitted</option>
+                    <option value="E">Approval</option>
+                    <option value="O">Open</option>
+                    <option value="C">Closed</option>
+                    <option value="R">Rejected</option>
+                    <option value="T">Terminated</option>
+                </select>
+                <button class="btn btn-primary" onclick="loadContracts()">🔍 Search</button>
+                <button class="btn btn-secondary" onclick="clearContractFilters()">✖️ Clear</button>
+            </div>
+            <div id="contracts-status" class="status" style="display:none;"></div>
+            <div id="contracts-table"></div>
+        </div>
+
+        <!-- SBL Detail Tab -->
+        <div id="sbl-detail" class="tab-content">
+            <h2>SBL Detail (Lendable Pool & Borrowing Needs)</h2>
+            <div class="controls">
+                <input type="text" id="sbl-participant" placeholder="Participant Code" style="width: 150px;">
+                <input type="text" id="sbl-instrument" placeholder="Instrument Code" style="width: 150px;">
+                <select id="sbl-side" style="width: 120px;">
+                    <option value="">All Sides</option>
+                    <option value="BORR">Borrow</option>
+                    <option value="LEND">Lend</option>
+                </select>
+                <select id="sbl-aro" style="width: 120px;">
+                    <option value="">All ARO</option>
+                    <option value="true">ARO Only</option>
+                    <option value="false">Non-ARO</option>
+                </select>
+                <button class="btn btn-primary" onclick="loadSBLDetail()">🔍 Search</button>
+                <button class="btn btn-secondary" onclick="clearSBLFilters()">✖️ Clear</button>
+            </div>
+            <div id="sbl-detail-status" class="status" style="display:none;"></div>
+            <div id="sbl-detail-table"></div>
+        </div>
+
+        <!-- SBL Aggregate Tab -->
+        <div id="sbl-aggregate" class="tab-content">
+            <h2>SBL Aggregate (Net Position by Instrument)</h2>
+            <div class="controls">
+                <input type="text" id="agg-instrument" placeholder="Instrument Code" style="width: 150px;">
+                <select id="agg-side" style="width: 150px;">
+                    <option value="">All Sides</option>
+                    <option value="BORR">Net Borrow</option>
+                    <option value="LEND">Net Lend</option>
+                </select>
+                <button class="btn btn-primary" onclick="loadSBLAggregate()">🔍 Search</button>
+                <button class="btn btn-secondary" onclick="clearAggFilters()">✖️ Clear</button>
+            </div>
+            <div id="sbl-aggregate-status" class="status" style="display:none;"></div>
+            <div id="sbl-aggregate-table"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+[
+  {
+    "code": "BBRI",
+    "name": "Bank Rakyat Indonesia Tbk",
+    "status": true
+  },
+  {
+    "code": "BBCA",
+    "name": "Bank Central Asia Tbk",
+    "status": true
+  },
+  {
+    "code": "BMRI",
+    "name": "Bank Mandiri Tbk",
+    "status": true
+  },
+  {
+    "code": "TLKM",
+    "name": "Telkom Indonesia Tbk",
+    "status": true
+  },
+  {
+    "code": "ASII",
+    "name": "Astra International Tbk",
+    "status": true
+  },
+  {
+    "code": "UNVR",
+    "name": "Unilever Indonesia Tbk",
+    "status": true
+  },
+  {
+    "code": "INDF",
+    "name": "Indofood Sukses Makmur Tbk",
+    "status": true
+  },
+  {
+    "code": "KLBF",
+    "name": "Kalbe Farma Tbk",
+    "status": true
+  },
+  {
+    "code": "ICBP",
+    "name": "Indofood CBP Sukses Makmur Tbk",
+    "status": true
+  },
+  {
+    "code": "GGRM",
+    "name": "Gudang Garam Tbk",
+    "status": true
+  }
+]
