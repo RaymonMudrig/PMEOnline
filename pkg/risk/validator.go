@@ -53,9 +53,11 @@ func (v *Validator) ValidateOrder(order ledger.Order) error {
 		return err
 	}
 
-	// 5. Date validation
-	if err := v.validateDates(order); err != nil {
-		return err
+	// 5. Date validation (BORR orders only)
+	if order.Side == "BORR" {
+		if err := v.validateDates(order); err != nil {
+			return err
+		}
 	}
 
 	// 6. Quantity validation
@@ -96,8 +98,12 @@ func (v *Validator) validateBasicFields(order ledger.Order) error {
 	if order.Quantity <= 0 {
 		return &ValidationError{Field: "Quantity", Message: "must be greater than 0"}
 	}
-	if order.Periode <= 0 {
-		return &ValidationError{Field: "Periode", Message: "must be greater than 0"}
+
+	// BORR-specific validations (LEND orders don't need periode)
+	if order.Side == "BORR" {
+		if order.Periode <= 0 {
+			return &ValidationError{Field: "Periode", Message: "must be greater than 0"}
+		}
 	}
 
 	return nil

@@ -86,6 +86,7 @@ type OrderEntity struct {
 	Instruction       string    `json:"instruction"`
 	ARO               bool      `json:"aro"`
 	WReffRequestID    string    `json:"w_reff_request_id"`
+	Message           string    `json:"message"`
 	EntryAt           time.Time `json:"entry_at"`
 	OpenAt            time.Time `json:"open_at"`
 	RejectAt          time.Time `json:"reject_at"`

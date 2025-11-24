@@ -283,14 +283,18 @@ func validateOrderRequest(req OrderRequest) error {
 	if req.Quantity <= 0 {
 		return &ValidationError{Field: "quantity", Message: "must be greater than 0"}
 	}
-	if req.Periode <= 0 {
-		return &ValidationError{Field: "periode", Message: "must be greater than 0"}
-	}
-	if req.SettlementDate.IsZero() {
-		return &ValidationError{Field: "settlement_date", Message: "is required"}
-	}
-	if req.ReimbursementDate.IsZero() {
-		return &ValidationError{Field: "reimbursement_date", Message: "is required"}
+
+	// BORR-specific validations (LEND orders don't need settlement dates, periode, ARO)
+	if req.Side == "BORR" {
+		if req.Periode <= 0 {
+			return &ValidationError{Field: "periode", Message: "must be greater than 0"}
+		}
+		if req.SettlementDate.IsZero() {
+			return &ValidationError{Field: "settlement_date", Message: "is required"}
+		}
+		if req.ReimbursementDate.IsZero() {
+			return &ValidationError{Field: "reimbursement_date", Message: "is required"}
+		}
 	}
 
 	return nil

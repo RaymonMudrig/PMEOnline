@@ -15,6 +15,9 @@ Thumbs.db
 # Test binary, built with `go test -c`
 *.test
 
+# Project build output
+bin/
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*

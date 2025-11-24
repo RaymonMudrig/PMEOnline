@@ -309,7 +309,17 @@ function displayOrders(orders) {
 
     orders.forEach(o => {
         html += '<tr>';
-        html += '<td><strong>' + o.nid + '</strong></td>';
+        html += '<td class="has-tooltip"><strong>' + o.nid + '</strong>';
+        // Add tooltip with hidden columns
+        html += '<div class="row-tooltip">';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Reff Request ID:</span><span class="tooltip-value">' + o.reff_request_id + '</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Participant:</span><span class="tooltip-value">' + o.participant_code + '</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Account:</span><span class="tooltip-value">' + o.account_code + '</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Reimbursement Date:</span><span class="tooltip-value">' + o.reimbursement_date + '</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Market Price:</span><span class="tooltip-value">' + o.market_price.toLocaleString() + '</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Message:</span><span class="tooltip-value">' + (o.message || '-') + '</span></div>';
+        html += '</div>';
+        html += '</td>';
         html += '<td><span class="badge ' + (o.side === 'BORR' ? 'badge-danger' : 'badge-success') + '">' + o.side + '</span></td>';
         html += '<td>' + o.instrument_code + '</td>';
         html += '<td>' + o.quantity.toLocaleString() + '</td>';
@@ -325,6 +335,27 @@ function displayOrders(orders) {
 
     html += '</tbody></table>';
     tableDiv.innerHTML = html;
+
+    // Add event listeners for tooltip positioning
+    addTooltipPositioning();
+}
+
+function addTooltipPositioning() {
+    const rows = document.querySelectorAll('#orders-table tbody tr');
+
+    rows.forEach(row => {
+        row.addEventListener('mouseenter', function(e) {
+            const tooltip = this.querySelector('.row-tooltip');
+            if (tooltip) {
+                const cell = this.querySelector('td.has-tooltip');
+                const rect = cell.getBoundingClientRect();
+
+                // Position tooltip below the row, aligned to the left of the cell
+                tooltip.style.left = rect.left + 'px';
+                tooltip.style.top = (rect.bottom + 8) + 'px';
+            }
+        });
+    });
 }
 
 async function loadContracts() {

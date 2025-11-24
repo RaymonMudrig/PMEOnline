@@ -10,24 +10,25 @@ import (
 )
 
 type LedgerPoint struct {
-	Participant map[string]ParticipantEntity `json:"participant"`
-	Account     map[string]AccountEntity     `json:"account"`
-	Instrument  map[string]InstrumentEntity  `json:"instrument"`
-	Parameter   ParameterEntity              `json:"parameter"`
-	SessionTime SessionTimeEntity            `json:"session_time"`
-	Holiday     map[int]HolidayEntity        `json:"holiday"`
-	Orders      map[int]OrderEntity          `json:"orders"`
-	Trades      map[int]TradeEntity          `json:"trades"`
-	Contracts   map[int]ContractEntity       `json:"contracts"`
-	Commit      chan any
-	Sync        chan LedgerPointInterface
-	allSync     []LedgerPointInterface
-	IsReady     bool
-	rx          chan kafka.Message
-	url         string
-	topic       string
-	id          string
-	startid     string
+	Participant  map[string]ParticipantEntity `json:"participant"`
+	Account      map[string]AccountEntity     `json:"account"`
+	Instrument   map[string]InstrumentEntity  `json:"instrument"`
+	Parameter    ParameterEntity              `json:"parameter"`
+	SessionTime  SessionTimeEntity            `json:"session_time"`
+	Holiday      map[int]HolidayEntity        `json:"holiday"`
+	Orders       map[int]OrderEntity          `json:"orders"`
+	Trades       map[int]TradeEntity          `json:"trades"`
+	Contracts    map[int]ContractEntity       `json:"contracts"`
+	Commit       chan any
+	Sync         chan LedgerPointInterface
+	allSync      []LedgerPointInterface
+	IsReady      bool
+	rx           chan kafka.Message
+	url          string
+	topic        string
+	id           string
+	startid      string
+	lastOrderNID int
 }
 
 type LedgerPointInterface interface {
@@ -56,21 +57,22 @@ type LedgerPointInterface interface {
 func CreateLedgerPoint(url string, topic string, id string, ctx context.Context) *LedgerPoint {
 
 	point := LedgerPoint{
-		Holiday:     make(map[int]HolidayEntity),
-		Orders:      make(map[int]OrderEntity),
-		Trades:      make(map[int]TradeEntity),
-		Contracts:   make(map[int]ContractEntity),
-		Participant: make(map[string]ParticipantEntity),
-		Account:     make(map[string]AccountEntity),
-		Instrument:  make(map[string]InstrumentEntity),
-		Commit:      make(chan any, 1000),
-		Sync:        make(chan LedgerPointInterface, 1000),
-		IsReady:     false,
-		url:         url,
-		topic:       topic,
-		id:          id,
-		startid:     id + "_" + time.Now().Format("20060102150405"),
-		rx:          make(chan kafka.Message, 1000), // Buffer 1000 messages
+		Holiday:      make(map[int]HolidayEntity),
+		Orders:       make(map[int]OrderEntity),
+		Trades:       make(map[int]TradeEntity),
+		Contracts:    make(map[int]ContractEntity),
+		Participant:  make(map[string]ParticipantEntity),
+		Account:      make(map[string]AccountEntity),
+		Instrument:   make(map[string]InstrumentEntity),
+		Commit:       make(chan any, 1000),
+		Sync:         make(chan LedgerPointInterface, 1000),
+		IsReady:      false,
+		url:          url,
+		topic:        topic,
+		id:           id,
+		startid:      id + "_" + time.Now().Format("20060102150405"),
+		rx:           make(chan kafka.Message, 1000), // Buffer 1000 messages
+		lastOrderNID: 0,
 	}
 
 	go point.go_process(ctx)
@@ -416,6 +418,7 @@ func (obj *LedgerPoint) SyncOrderNak(a OrderNak) {
 	if order, exists := obj.Orders[a.OrderNID]; exists {
 		order.RejectAt = time.Now()
 		order.State = "R"
+		order.Message = a.Message
 		obj.Orders[a.OrderNID] = order
 	}
 	for _, sync := range obj.allSync {

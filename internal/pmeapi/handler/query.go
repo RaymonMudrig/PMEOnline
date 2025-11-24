@@ -43,6 +43,7 @@ type OrderInfo struct {
 	MarketPrice       float64 `json:"market_price"`
 	Rate              float64 `json:"rate"`
 	ARO               bool    `json:"aro"`
+	Message           string  `json:"message"`
 	EntryAt           string  `json:"entry_at"`
 }
 
@@ -155,6 +156,7 @@ func (h *QueryHandler) GetOrderList(w http.ResponseWriter, r *http.Request) {
 			MarketPrice:       order.MarketPrice,
 			Rate:              order.Rate,
 			ARO:               order.ARO,
+			Message:           order.Message,
 			EntryAt:           order.EntryAt.Format("2006-01-02 15:04:05"),
 		}
 		orders = append(orders, orderInfo)

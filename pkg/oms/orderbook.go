@@ -25,9 +25,9 @@ type OrderQueue struct {
 
 // QueuedOrder wraps an order entity with additional queue information
 type QueuedOrder struct {
-	Order     ledger.OrderEntity
-	QueuedAt  time.Time
-	Priority  int // Used for sorting
+	Order    ledger.OrderEntity
+	QueuedAt time.Time
+	Priority int // Used for sorting
 }
 
 // NewOrderBook creates a new order book for an instrument
@@ -55,9 +55,10 @@ func (ob *OrderBook) AddOrder(order ledger.OrderEntity, targetParticipant string
 		QueuedAt: time.Now(),
 	}
 
-	if order.Side == "BORR" {
+	switch order.Side {
+	case "BORR":
 		ob.BorrowOrders.Add(queuedOrder, targetParticipant)
-	} else if order.Side == "LEND" {
+	case "LEND":
 		ob.LendOrders.Add(queuedOrder, targetParticipant)
 	}
 }
@@ -67,9 +68,10 @@ func (ob *OrderBook) RemoveOrder(nid int, side string) bool {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
 
-	if side == "BORR" {
+	switch side {
+	case "BORR":
 		return ob.BorrowOrders.Remove(nid)
-	} else if side == "LEND" {
+	case "LEND":
 		return ob.LendOrders.Remove(nid)
 	}
 
@@ -84,11 +86,12 @@ func (ob *OrderBook) GetMatchableOrders(order ledger.OrderEntity) []*QueuedOrder
 
 	var matchableOrders []*QueuedOrder
 
-	if order.Side == "BORR" {
+	switch order.Side {
+	case "BORR":
 		// For borrow orders, match with lend orders
 		// Priority: Same participant first, sorted by quantity DESC
 		matchableOrders = ob.LendOrders.GetSorted(order.ParticipantCode, order.Side)
-	} else if order.Side == "LEND" {
+	case "LEND":
 		// For lend orders, match with borrow orders
 		// Priority: Same participant first, sorted by time ASC (FIFO)
 		matchableOrders = ob.BorrowOrders.GetSorted(order.ParticipantCode, order.Side)
