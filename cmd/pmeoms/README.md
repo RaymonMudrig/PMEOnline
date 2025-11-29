@@ -1,360 +1,289 @@
-## OMS (Order Management System) Service
+# PMEOMS - Order Management System
 
-The OMS is the core matching engine for the PME Online system. It validates orders, performs risk management checks, matches borrowing and lending orders, and generates trades.
+## Overview
+
+PMEOMS (Pinjam Meminjam Efek Order Management System) is the core matching engine for the securities borrowing & lending platform. It processes orders, validates risk limits, matches borrowers with lenders, and generates trades.
 
 ## Architecture
 
 ```
-┌─────────┐     ┌──────────────┐     ┌───────┐
-│ Order   │────>│     OMS      │────>│ Trade │
-│ Events  │     │   Service    │     │Events │
-└─────────┘     └──────────────┘     └───────┘
-                       │
-                       ├─ Risk Validator
-                       ├─ Matching Engine
-                       ├─ Order Books
-                       └─ Trade Generator
+┌─────────────────────────────────────────────────────────────┐
+│                         PMEOMS                              │
+│                                                             │
+│  ┌──────────────┐     ┌──────────────┐    ┌─────────────┐ │
+│  │ SyncHandler  │────►│     OMS      │───►│   Matcher   │ │
+│  └──────────────┘     │   Engine     │    └─────────────┘ │
+│         │             └──────────────┘            │        │
+│         │                    │                    │        │
+│         │             ┌──────┴──────┐            │        │
+│         │             │             │            │        │
+│         │      ┌──────▼─────┐ ┌────▼────────┐   │        │
+│         │      │ Validator  │ │   Checker   │   │        │
+│         │      └────────────┘ └─────────────┘   │        │
+│         │                                        │        │
+│         │             ┌──────────────┐           │        │
+│         └─────────────│ LedgerPoint  │◄──────────┘        │
+│                       └──────────────┘                     │
+│                              │                             │
+└──────────────────────────────┼─────────────────────────────┘
+                               │
+                               ▼
+                        ┌─────────────┐
+                        │    Kafka    │
+                        │ "pme-ledger"│
+                        └─────────────┘
 ```
 
 ## Components
 
-### 1. Risk Management (`pkg/risk/`)
+### 1. OMS Engine (`internal/pmeoms/oms.go`)
 
-#### Validator
-- Pre-trade validation for all orders
-- Account existence and eligibility checks
-- Instrument eligibility verification
-- Participant eligibility verification
-- Date and quantity validation
-- **Borrowing-specific:** Trading limit validation
-- **Lending-specific:** Basic validation only (no limit check)
+The main orchestrator that coordinates all order processing activities.
 
-#### Calculator
-- Fee calculations (flat fee, borrowing fee, lending fee)
-- Borrowing value calculation
-- Daily and accumulated fee calculations
-- Complete fee breakdown generation
+**Responsibilities:**
+- Process new orders (validation → acknowledgment → matching)
+- Initialize existing orders on startup
+- Track instrument eligibility
+- Coordinate validator, checker, matcher, and trade generator
 
-#### Checker
-- Monitors instrument eligibility changes
-- Monitors participant eligibility changes
-- Handles BlockProcess state for ineligible instruments
-- Identifies orders that should be blocked
+**Key Methods:**
+- `ProcessOrder(orderNID)` - Process new order through validation pipeline
+- `MatchOrder(orderNID)` - Attempt to match an acknowledged order
+- `InitOrders()` - Process all saved/open orders on startup
 
-### 2. OMS Engine (`pkg/oms/`)
+### 2. SyncHandler (`internal/pmeoms/sync_handler.go`)
 
-#### Order Book
-- Maintains separate queues for borrow and lend orders per instrument
-- Separates same-participant and cross-participant orders
-- Implements priority sorting for matching
+Implements `LedgerPointInterface` to receive events from Kafka.
 
-#### Matcher
-- Implements matching algorithm from design spec (F.2)
-- **For Borrowing orders:** Match with Lend orders
-  - Priority: Same participant first
-  - Sort: Quantity DESC (prefer larger lenders)
-- **For Lending orders:** Match with Borrow orders
-  - Priority: Same participant first
-  - Sort: Time ASC (FIFO)
+**Event Handlers:**
+- `SyncOrder` - New order submitted, triggers `ProcessOrder()`
+- `SyncOrderAck` - Order acknowledged, triggers `MatchOrder()`
+- `SyncInstrument` - Instrument eligibility changed, triggers risk check
+- Other events handled by risk checker
+
+### 3. Validator (`pkg/ledger/risk/validator.go`)
+
+Validates orders against business rules.
+
+**Validations:**
+- Account exists and is active
+- Instrument exists and is eligible
+- Participant exists
+- Quantity > 0
+- Settlement date is valid
+- Order date/time constraints
+
+**Key Methods:**
+- `ValidateOrder(order)` - Full validation
+- `IsPendingNew(order)` - Check if settlement date is in future
+- `IsPendingReopen(order)` - Check if eligible to reopen from pending
+
+### 4. Checker (`pkg/ledger/risk/checker.go`)
+
+Performs risk and limit checks.
+
+**Checks:**
+- Trading limits (account-level)
+- Pool limits (participant-level)
+- Future commitment calculations
+- Session time validation
+- Holiday calendar
+
+**Key Methods:**
+- `CheckOrderRisk(order)` - Validate order against limits
+- `CheckPendingOrders()` - Reopen pending orders when session time allows
+
+### 5. Matcher (`internal/pmeoms/matcher.go`)
+
+Matches borrower orders with lender orders using FIFO algorithm.
+
+**Matching Rules:**
+- Same instrument code
+- Opposite sides (BORR ↔ LEND)
+- Same settlement date
+- Same period
+- FIFO (First In, First Out)
 - Supports partial fills
 
-#### Trade Generator
-- Creates Trade and Contract entities from matches
-- Calculates fees using risk calculator
-- Generates unique trade references (KpeiReff)
-- Creates borrower and lender contracts
+**Key Methods:**
+- `AddOrder(order)` - Add order to book
+- `FindMatch(order)` - Find matching counterparty
+- `RemoveOrder(orderNID)` - Remove order from book
 
-## Matching Rules (F.2)
+### 6. OrderBook (`internal/pmeoms/orderbook.go`)
 
-1. **Instrument:** Must match exactly
-2. **Participant Priority:** In-house matching first (same participant)
-3. **For Lending:** Prefer larger lenders (Quantity DESC)
-4. **For Borrowing:** FIFO (Time ASC)
+Maintains lists of open orders for matching.
 
-## Validation Rules (F.1)
+**Data Structure:**
+- Map of instrument code → order list
+- Separate books for BORR and LEND sides
+- Orders stored in FIFO order
 
-### Borrowing Orders
+### 7. TradeGenerator (`internal/pmeoms/tradegen.go`)
 
-**Formula:**
+Creates trade and contract events from matched orders.
+
+**Responsibilities:**
+- Calculate trade fees (flat fee, borrower fee, lender fee)
+- Generate unique KPEI reference
+- Create trade event
+- Create contract events for each participant
+- Handle partial fills
+
+**Fee Calculation:**
+- Uses risk.Calculator for fee computation
+- Supports ARO (Automatic Roll-Over) fee adjustment
+- Different fees for borrower vs lender
+
+## Event Flow
+
+### New Order Flow
+
 ```
-BorrVal = MarketPrice × Quantity
-TotalFee = BorrVal × FeeBorr × Period / 365 + FeeFlat
-TradingLimit >= TotalFee + BorrVal
+1. Order Event (Kafka)
+   │
+   ▼
+2. SyncHandler.SyncOrder()
+   │
+   ▼
+3. OMS.ProcessOrder()
+   │
+   ├──► Validator.ValidateOrder()
+   │    │
+   │    ├─► VALID ──────────┐
+   │    └─► INVALID ────────┼──► OrderNak (Rejected)
+   │                         │
+   ├──► Checker.IsPending()  │
+   │    │                    │
+   │    ├─► FUTURE DATE ─────┼──► OrderPending
+   │    └─► READY ───────────┘
+   │
+   ├──► Checker.CheckOrderRisk()
+   │    │
+   │    ├─► EXCEEDS LIMITS ──────► OrderNak (Rejected)
+   │    └─► WITHIN LIMITS
+   │
+   ▼
+4. OrderAck (Acknowledged)
+   │
+   ▼
+5. SyncHandler.SyncOrderAck()
+   │
+   ▼
+6. OMS.MatchOrder()
+   │
+   ▼
+7. Matcher.FindMatch()
+   │
+   ├─► NO MATCH ────────► Order remains in book
+   │
+   └─► MATCH FOUND ─────► TradeGenerator.GenerateTrade()
+                          │
+                          ├──► Trade Event
+                          └──► Contract Events
 ```
 
-**Checks:**
-- Account exists and belongs to correct participant
-- Instrument exists and is eligible
-- Participant has borrowing eligibility
-- Settlement date is in the future
-- Reimbursement date > Settlement date
-- Periode matches date range
-- Quantity is multiple of denomination limit
-- Quantity <= maximum quantity
-- **Trading limit is sufficient**
+### Pending Order Reopening
 
-### Lending Orders
-
-**Checks:**
-- Account exists and belongs to correct participant
-- Instrument exists and is eligible
-- Participant has lending eligibility
-- Basic field validation
-- **No pool limit check** (per design F.1.2)
-
-## Fee Calculation (F.3)
-
-### Static Rates
-- Flat Fee: 0.05% (one-time, borrower only)
-- Borrowing Fee: 18% annual
-- Lending Fee: 15% annual
-
-### Formulas
-
-**Borrower:**
 ```
-FeeFlat = MarketPrice × Quantity × 0.0005
-FeeBorrDaily = MarketPrice × Quantity × 0.18 / 365
-FeeBorrAccum = FeeBorrDaily × DaysPassed
-```
-
-**Lender:**
-```
-FeeLendDaily = MarketPrice × Quantity × 0.15 / 365
-FeeLendAccum = FeeLendDaily × DaysPassed
+Session Time Change (SOD event)
+   │
+   ▼
+Checker.CheckPendingOrders()
+   │
+   ▼
+For each pending order:
+   │
+   ├──► Is settlement date valid now?
+   │    │
+   │    ├─► YES ──► OrderAck (Reopen)
+   │    └─► NO ───► Remains pending
+   │
+   ▼
+SyncHandler.SyncOrderAck()
+   │
+   ▼
+OMS.MatchOrder()
 ```
 
 ## Order States
 
-```
-S (Saved) → O (Open) → P (Partial) → M (Matched)
-S → R (Rejected)
-O/P → W (Withdrawn)
-O/P → B (BlockProcess) → O/P
-```
-
-## Trade States
+### State Transitions
 
 ```
-S (Submitted) → E (Approval/Wait) → O (Open) → C (Closed)
-S/E → R (Rejected)
+S (Submitted)
+  │
+  ├──► Validation Failed ──────► R (Rejected) [OrderNak]
+  │
+  ├──► Future Settlement ───────► G (Pending) [OrderPending]
+  │                                    │
+  │                                    └──► SOD ──► O (Open) [OrderAck]
+  │
+  ├──► Exceeds Limits ──────────► R (Rejected) [OrderNak]
+  │
+  └──► Valid ───────────────────► O (Open) [OrderAck]
+                                       │
+                                       ├──► Matched ──► M (Matched) [Trade]
+                                       │
+                                       └──► Withdrawn ─► W (Withdrawn) [OrderWithdrawAck]
 ```
+
+### State Meanings
+
+- **S (Submitted)** - Order received, awaiting validation
+- **O (Open)** - Order validated and active in matching book
+- **P (Partial)** - Order partially matched
+- **M (Matched)** - Order fully matched
+- **G (Pending)** - Order waiting for future settlement date
+- **W (Withdrawn)** - Order cancelled by user
+- **R (Rejected)** - Order failed validation
 
 ## Configuration
 
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KAFKA_URL` | `localhost:9092` | Kafka broker URL |
-| `KAFKA_TOPIC` | `pme-ledger` | Kafka topic name |
-
-## Running
-
-### Prerequisites
-
-1. Kafka must be running
-2. Kafka topic `pme-ledger` must exist
-3. eClear API service should be running (for master data)
-
-### Start the service
+### Environment Variables
 
 ```bash
-# Using default configuration
-cd cmd/pmeoms
-go run main.go
-
-# Using custom configuration
-KAFKA_URL=localhost:9092 \
-KAFKA_TOPIC=pme-ledger \
-go run main.go
-
-# Or use Make
-make run-pmeoms
+KAFKA_URL=localhost:9092      # Kafka broker address
+KAFKA_TOPIC=pme-ledger        # Kafka topic name
 ```
 
-## Event Flow
-
-### Order Processing
+## Startup Sequence
 
 ```
-1. Order event received from Kafka
-   ↓
-2. Risk validation
-   ├─ Valid → OrderAck
-   └─ Invalid → OrderNak
-   ↓
-3. Check settlement date
-   ├─ Future → Pending-New state
-   └─ Today → Continue
-   ↓
-4. Attempt matching
-   ├─ Fully matched → Generate Trade(s)
-   ├─ Partially matched → Generate Trade(s) + Queue remainder
-   └─ No match → Queue order
-   ↓
-5. Trade(s) committed to Kafka
-   ↓
-6. eClear API sends to eClear for approval
-   ↓
-7. TradeAck/TradeNak received
+1. Create LedgerPoint
+   │
+2. Create OMS Engine
+   │
+3. Create SyncHandler
+   │
+4. Subscribe to LedgerPoint events
+   │
+5. Start LedgerPoint (Kafka consumer)
+   │
+6. Wait for IsReady
+   │
+7. InitOrders() - Process existing orders
+   │
+8. Start statistics reporter (every 30 seconds)
+   │
+9. Service ready for new orders
 ```
-
-### Withdrawal Processing
-
-```
-1. OrderWithdraw event received
-   ↓
-2. Check order state (must be O or P)
-   ├─ Valid → Remove from order book
-   └─ Invalid → OrderWithdrawNak
-   ↓
-3. OrderWithdrawAck committed
-```
-
-### Instrument Eligibility Change
-
-```
-1. Instrument event received (Status = false)
-   ↓
-2. Mark instrument as ineligible
-   ↓
-3. Block matching for this instrument
-   ↓
-4. Find all open orders for instrument
-   ↓
-5. Mark orders as BlockProcess state
-   ↓
-6. When Status = true again
-   ↓
-7. Restore orders to previous state
-   ↓
-8. Resume matching
-```
-
-## Testing
-
-### 1. Start Infrastructure
-
-```bash
-# Start Kafka and PostgreSQL
-make setup
-
-# Start eClear API (for master data)
-make run-eclearapi
-
-# In another terminal, populate master data
-cd cmd/eclearapi
-./test.sh
-```
-
-### 2. Start OMS
-
-```bash
-# In another terminal
-make run-pmeoms
-```
-
-### 3. Submit Test Orders
-
-You can submit orders by creating Order events. For testing, you can use the Kafka console producer:
-
-```bash
-docker exec -it pme-kafka kafka-console-producer.sh \
-  --bootstrap-server localhost:9092 \
-  --topic pme-ledger \
-  --property "parse.key=true" \
-  --property "key.separator=:"
-```
-
-Then send JSON like:
-```json
-ledgerpoint:{"nid":1001,"reff_request_id":"TEST-001","account_nid":1,"account_code":"YU-012345","participant_nid":1,"participant_code":"YU","instrument_nid":1,"instrument_code":"BBRI","side":"BORR","quantity":1000,"settlement_date":"2025-11-23T00:00:00Z","reimbursement_date":"2025-12-23T00:00:00Z","periode":30,"market_price":5000,"rate":0.18,"aro":false}
-```
-
-### 4. Monitor Logs
-
-Watch the OMS logs for:
-- Order validation
-- Matching attempts
-- Trade generation
-- Statistics updates
-
-## Integration with Other Services
-
-### eClear API
-- Receives master data (Participants, Accounts, Instruments, Limits)
-- Sends trades to eClear for approval
-- Receives trade approvals (TradeAck/TradeNak)
-
-### APME API (when implemented)
-- Receives orders from clients
-- Displays order status
-- Shows SBL data from order books
-- Notifies clients of matches
-
-### Database Exporter (when implemented)
-- Persists all orders, trades, and contracts
-- Maintains audit trail
 
 ## Monitoring
 
-The OMS logs important events with emoji indicators:
+### Log Patterns
 
-- `📥` Incoming events
-- `✅` Successful operations
-- `❌` Errors and rejections
-- `⚠️` Warnings (e.g., eligibility changes)
-- `🔄` Matching operations
-- `📝` Trade generation
-- `📊` Statistics
-- `🎯` Full matches
-- `⚡` Partial matches
-- `📋` Orders queued
+**Order Processing:**
+```
+📥 Processing order: 123 (BORR BBRI 1000 shares)
+✅ Order 123 acknowledged
+🔄 Attempting to match order 123
+✅ Trade matched: KPEI-20251129-0001
+```
 
-Statistics are logged every 30 seconds showing:
-- Total instruments with orders
-- Order counts per instrument (borrow/lend)
-
-## Troubleshooting
-
-### Orders are rejected
-
-Check logs for validation errors:
-- Account exists?
-- Instrument eligible?
-- Participant eligible?
-- Trading limit sufficient? (for borrowing)
-- Quantity valid?
-- Dates valid?
-
-### Orders not matching
-
-- Check if instrument is eligible
-- Verify there are orders on opposite side
-- Check settlement dates match
-- Review matching rules (same participant priority)
-
-### Trades not being sent to eClear
-
-- Ensure eClear API service is running
-- Check eClear API logs for errors
-- Verify network connectivity
-
-## Performance Considerations
-
-- Order books use read-write locks for concurrent access
-- In-memory data structures for fast matching
-- Event-driven architecture for scalability
-- Stateless matching (can run multiple instances)
-
-## Future Enhancements
-
-1. Pending order scheduler (for future settlement dates)
-2. BlockProcess state implementation
-3. ARO (Auto Roll-Over) order processing
-4. Lender recall matching
-5. Settlement date triggers
-6. Market price updates
-7. EOD processing
-8. Performance metrics and monitoring
+**Validation Failures:**
+```
+❌ Order 123 validation failed: account not found
+❌ Order 124 rejected: exceeds trading limit
+⚠️  Order 125 pending: settlement date in future
+```

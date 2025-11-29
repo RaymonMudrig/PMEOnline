@@ -25,14 +25,7 @@ func main() {
 
 	// Initialize LedgerPoint
 	log.Println("[OMS] Initializing LedgerPoint...")
-	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "pmeoms", ctx)
-
-	// Wait for LedgerPoint to be ready
-	log.Println("[OMS] Waiting for LedgerPoint to be ready...")
-	for !ledgerPoint.IsReady {
-		time.Sleep(100 * time.Millisecond)
-	}
-	log.Println("[OMS] LedgerPoint is ready")
+	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "pmeoms")
 
 	// Initialize OMS
 	log.Println("[OMS] Initializing OMS...")
@@ -41,7 +34,15 @@ func main() {
 	// Subscribe to events
 	log.Println("[OMS] Subscribing to ledger events...")
 	syncHandler := pmeoms.NewSyncHandler(omsEngine, ledgerPoint)
-	ledgerPoint.Sync <- syncHandler
+
+	ledgerPoint.Start([]ledger.LedgerPointInterface{syncHandler}, ctx)
+
+	// Wait for LedgerPoint to be ready
+	log.Println("[OMS] Waiting for LedgerPoint to be ready...")
+	for !ledgerPoint.IsReady {
+		time.Sleep(100 * time.Millisecond)
+	}
+	log.Println("[OMS] LedgerPoint is ready")
 
 	// Initialize existing orders from ledger (process saved and open orders)
 	omsEngine.InitOrders()

@@ -1,320 +1,584 @@
-# eClear API Service
+# EClearAPI - eClear Integration Service
 
-The eClear API service is responsible for:
-1. Receiving master data from eClear (Participants, Accounts, Instruments, Account Limits)
-2. Receiving trade approvals and reimbursement instructions from eClear
-3. Sending trade submissions to eClear for approval
+## Overview
+
+EClearAPI is the bi-directional integration service between the PME platform and the external eClear clearing house system. It handles:
+- **Outbound**: Sending matched trades to eClear for approval
+- **Inbound**: Receiving master data, trade approvals, and settlement notifications from eClear
 
 ## Architecture
 
 ```
-┌─────────┐                  ┌──────────────┐                ┌───────┐
-│ eClear  │ ──Master Data──> │  eClear API  │ ───Events──>   │ Kafka │
-│ System  │ <──Trades─────── │   Service    │ <──Events───   │       │
-└─────────┘                  └──────────────┘                └───────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        EClearAPI                             │
+│                                                              │
+│  ┌─────────────────┐           ┌──────────────────────────┐  │
+│  │  HTTP Handlers  │           │    EClearClient          │  │
+│  │   (Inbound)     │           │    (Outbound)            │  │
+│  │                 │           │                          │  │
+│  │  • MasterData   │           │  • SyncHandler           │  │
+│  │  • Trade        │           │  • SendTrade()           │  │
+│  │  • Query        │           │  • CheckPendingTrades()  │  │
+│  │  • Settings     │           │                          │  │
+│  └────────┬────────┘           └────────┬─────────────────┘  │
+│           │                             │                    │
+│           │                             │                    │
+│           └──────────┬──────────────────┘                    │
+│                      │                                       │
+│               ┌──────▼──────┐                                │
+│               │ LedgerPoint │                                │
+│               └──────┬──────┘                                │
+│                      │                                       │
+└──────────────────────┼───────────────────────────────────────┘
+                       │
+                       ▼
+                ┌─────────────┐           ┌──────────────┐
+                │    Kafka    │◄─────────►│    eClear    │
+                │ "pme-ledger"│           │   System     │
+                └─────────────┘           └──────────────┘
 ```
 
-## Endpoints
+## Components
 
-### Inbound (from eClear)
+### 1. EClearClient (`internal/eclearapi/handler/eclear_client.go`)
 
-#### Master Data
-- `POST /account/insert` - Insert/update accounts
-- `POST /instrument/insert` - Insert/update instruments
-- `POST /participant/insert` - Insert/update participants
-- `POST /account/limit` - Update account trading limits
+Manages outbound communication to eClear system.
 
-#### Trade Approvals
-- `POST /contract/matched` - Confirm trade approval from eClear
-- `POST /contract/reimburse` - Process reimbursement instruction
-- `POST /lender/recall` - Process lender recall instruction
+**Responsibilities:**
+- Subscribe to Trade events from LedgerPoint
+- Send matched trades to eClear for approval
+- Handle trade approval/rejection responses
+- Check for trades pending approval at EOD
 
-### Outbound (to eClear)
+**Key Methods:**
+- `SendTrade(trade)` - POST trade to eClear endpoint
+- `CheckPendingTrades()` - NAK trades not approved by EOD
+- `GetSyncHandler()` - Return subscriber for LedgerPoint
 
-The service automatically sends trades to eClear when they are matched by the OMS.
-
-Endpoint: `POST {ECLEAR_BASE_URL}/contract/matched`
-
-### Health Check
-- `GET /health` - Service health check
-
-## Configuration
-
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KAFKA_URL` | `localhost:9092` | Kafka broker URL |
-| `KAFKA_TOPIC` | `pme-ledger` | Kafka topic name |
-| `API_PORT` | `8081` | HTTP server port |
-| `ECLEAR_BASE_URL` | `http://localhost:9000` | eClear system base URL |
-
-## Running
-
-### Prerequisites
-
-1. Kafka must be running at `KAFKA_URL`
-2. Kafka topic `pme-ledger` must exist
-
-### Start the service
-
-```bash
-# Using default configuration
-go run main.go
-
-# Using custom configuration
-KAFKA_URL=localhost:9092 \
-KAFKA_TOPIC=pme-ledger \
-API_PORT=8081 \
-ECLEAR_BASE_URL=http://eclear.example.com \
-go run main.go
+**Trade Submission Flow:**
+```
+1. Receive Trade event (state: M)
+   │
+2. Extract borrower & lender contracts
+   │
+3. Build TradeMatchedPayload with:
+   │  - Trade details (instrument, quantity, period)
+   │  - Borrower info (account, SID, fees)
+   │  - Lender info (account, SID, fees)
+   │  - Timestamps (matched_at, reimburse_at)
+   │
+4. POST to eClear: /contract/matched
+   │
+   ├─► Success (200 OK) ──────► TradeWait event
+   └─► Failure (non-200) ─────► TradeWait event (retry)
 ```
 
-## Testing
-
-### 1. Test Master Data Insertion
-
-#### Insert Participants
-```bash
-curl -X POST http://localhost:8081/participant/insert \
-  -H "Content-Type: application/json" \
-  -d '[
-    {
-      "code": "YU",
-      "name": "Yuanta Securities",
-      "borr_eligibility": true,
-      "lend_eligibility": true
-    },
-    {
-      "code": "AA",
-      "name": "AA Securities",
-      "borr_eligibility": true,
-      "lend_eligibility": true
-    }
-  ]'
+**Payload Format:**
+```json
+{
+  "pme_trade_reff": "KPEI-20251129-0001",
+  "instrument_code": "BBRI",
+  "quantity": 1000,
+  "periode": 7,
+  "aro_status": false,
+  "fee_flat_rate": 0.001,
+  "fee_borr_rate": 0.0005,
+  "fee_lend_rate": 0.0004,
+  "matched_at": "2025-11-29 10:00:00",
+  "reimburse_at": "2025-12-06 10:00:00",
+  "lender": {
+    "pme_contract_reff": "CONTRACT-L-001",
+    "account_code": "ACC002",
+    "sid": "SID002",
+    "participant_code": "PART02",
+    "fee_lender": 12600.00
+  },
+  "borrower": {
+    "pme_contract_reff": "CONTRACT-B-001",
+    "account_code": "ACC001",
+    "sid": "SID001",
+    "participant_code": "PART01",
+    "fee_flat": 4500.00,
+    "fee_borrower": 15750.00
+  }
+}
 ```
 
-#### Insert Instruments
-```bash
-curl -X POST http://localhost:8081/instrument/insert \
-  -H "Content-Type: application/json" \
-  -d '[
-    {
-      "code": "BBRI",
-      "name": "Bank Rakyat Indonesia",
-      "status": true
-    },
-    {
-      "code": "BBCA",
-      "name": "Bank Central Asia",
-      "status": true
-    }
-  ]'
-```
+### 2. MasterDataHandler (`internal/eclearapi/handler/masterdata.go`)
+
+Receives master data from eClear and publishes to Kafka.
+
+**Endpoints:**
 
 #### Insert Accounts
-```bash
-curl -X POST http://localhost:8081/account/insert \
-  -H "Content-Type: application/json" \
-  -d '[
+```http
+POST /account/insert
+Content-Type: application/json
+
+{
+  "accounts": [
     {
-      "code": "YU-012345",
-      "name": "John Doe",
-      "sid": "1234567890ABCDEF",
-      "email": "john@example.com",
-      "address": "Jakarta",
-      "participant": "YU"
-    },
-    {
-      "code": "AA-067890",
-      "name": "Jane Smith",
-      "sid": "ABCDEF1234567890",
-      "email": "jane@example.com",
-      "address": "Surabaya",
-      "participant": "AA"
+      "code": "ACC001",
+      "participant_code": "PART01",
+      "sid": "SID001"
     }
-  ]'
+  ]
+}
 ```
 
-#### Update Account Limits
-```bash
-curl -X POST http://localhost:8081/account/limit \
-  -H "Content-Type: application/json" \
-  -d '[
+Publishes `Account` events to Kafka.
+
+#### Insert Instruments
+```http
+POST /instrument/insert
+Content-Type: application/json
+
+{
+  "instruments": [
     {
-      "code": "YU-012345",
-      "borr_limit": 1000000000.00,
-      "pool_limit": 500000000.00
-    },
-    {
-      "code": "AA-067890",
-      "borr_limit": 2000000000.00,
-      "pool_limit": 1000000000.00
+      "code": "BBRI",
+      "name": "Bank BRI",
+      "status": true  // eligible
     }
-  ]'
+  ]
+}
 ```
 
-### 2. Test Trade Approval
+Publishes `Instrument` events to Kafka.
 
-#### Confirm Trade Match
-```bash
-curl -X POST http://localhost:8081/contract/matched \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pme_trade_reff": "TRADE-20251122-001",
-    "state": "OK",
-    "borr_contract_reff": "CONTRACT-BORR-001",
-    "lend_contract_reff": "CONTRACT-LEND-001",
-    "open_time": "2025-11-22T09:30:00Z"
-  }'
+#### Insert Participants
+```http
+POST /participant/insert
+Content-Type: application/json
+
+{
+  "participants": [
+    {
+      "code": "PART01",
+      "name": "Participant 1"
+    }
+  ]
+}
 ```
 
-#### Process Reimbursement
-```bash
-curl -X POST http://localhost:8081/contract/reimburse \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pme_trade_reff": "TRADE-20251122-001",
-    "state": "REIM",
-    "borr_contract_reff": "CONTRACT-BORR-001",
-    "lend_contract_reff": "CONTRACT-LEND-001",
-    "close_time": "2025-12-22T09:30:00Z"
-  }'
+Publishes `Participant` events to Kafka.
+
+#### Update Account Limit
+```http
+POST /account/limit
+Content-Type: application/json
+
+{
+  "code": "ACC001",
+  "trade_limit": 1000000000,
+  "pool_limit": 5000000000
+}
 ```
 
-#### Process Reimbursement with ARO
-```bash
-curl -X POST http://localhost:8081/contract/reimburse \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pme_trade_reff": "TRADE-20251122-001",
-    "state": "ARO",
-    "borr_contract_reff": "CONTRACT-BORR-001",
-    "lend_contract_reff": "CONTRACT-LEND-001",
-    "close_time": "2025-12-22T09:30:00Z"
-  }'
+Publishes `AccountLimit` event to Kafka.
+
+### 3. TradeHandler (`internal/eclearapi/handler/trade.go`)
+
+Receives trade lifecycle events from eClear.
+
+**Endpoints:**
+
+#### Trade Approval/Rejection
+```http
+POST /contract/matched
+Content-Type: application/json
+
+{
+  "pme_trade_reff": "KPEI-20251129-0001",
+  "status": "approved"  // or "rejected"
+  "message": "Approved by eClear"  // optional
+}
 ```
 
-### 3. Test Lender Recall
-```bash
-curl -X POST http://localhost:8081/lender/recall \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contract_reff": "CONTRACT-LEND-001",
-    "kpei_reff": "KPEI-12345"
-  }'
+Publishes:
+- `TradeAck` if status = "approved"
+- `TradeNak` if status = "rejected"
+
+#### Trade Reimbursement
+```http
+POST /contract/reimburse
+Content-Type: application/json
+
+{
+  "pme_trade_reff": "KPEI-20251129-0001"
+}
 ```
 
-### 4. Health Check
-```bash
-curl http://localhost:8081/health
+Publishes `TradeReimburse` event (contract settlement).
+
+#### Lender Recall
+```http
+POST /lender/recall
+Content-Type: application/json
+
+{
+  "pme_trade_reff": "KPEI-20251129-0001",
+  "recall_date": "2025-12-01"
+}
+```
+
+Early termination requested by lender.
+
+### 4. QueryHandler (`internal/eclearapi/handler/query.go`)
+
+Provides read-only access for eClear dashboard.
+
+**Endpoints:**
+- `GET /participant/list` - List all participants
+- `GET /instrument/list` - List all instruments
+- `GET /account/list` - List all accounts
+
+### 5. SettingsHandler (`internal/eclearapi/handler/settings.go`)
+
+Manages system parameters and configuration.
+
+**Endpoints:**
+
+#### Get/Update Parameters
+```http
+GET /parameter
+
+Response:
+{
+  "fee_flat_rate": 0.001,
+  "fee_borr_rate": 0.0005,
+  "fee_lend_rate": 0.0004,
+  "auto_match_flag": true
+}
+
+POST /parameter/update
+Content-Type: application/json
+
+{
+  "fee_flat_rate": 0.0015
+}
+```
+
+#### Holiday Management
+```http
+GET /holiday/list
+
+POST /holiday/add
+{
+  "date": "2025-12-25",
+  "description": "Christmas"
+}
+```
+
+#### Session Time
+```http
+GET /sessiontime
+
+POST /sessiontime/update
+{
+  "pre_opening_time": "08:00:00",
+  "opening_time": "09:00:00",
+  "closing_time": "16:00:00"
+}
 ```
 
 ## Event Flow
 
-### Master Data Initialization
+### Outbound: Trade Submission
 
 ```
-eClear → POST /participant/insert → Kafka (Participant events)
-      → POST /instrument/insert  → Kafka (Instrument events)
-      → POST /account/insert     → Kafka (Account events)
-      → POST /account/limit      → Kafka (AccountLimit events)
+Trade Matched (PME)
+   │
+   ▼
+EClearClient.SyncTrade()
+   │
+   ▼
+Build TradeMatchedPayload
+   │
+   ├─► Lookup borrower contract
+   ├─► Lookup lender contract
+   ├─► Lookup account SIDs
+   └─► Calculate fees
+   │
+   ▼
+POST /contract/matched (eClear)
+   │
+   ├─► 200 OK ──────────► TradeWait (state: M → E)
+   │
+   └─► Error ───────────► TradeWait (state: M → E) + Log error
 ```
 
-### Trade Approval Flow
+### Inbound: Trade Approval
 
 ```
-OMS → Trade Matched → Kafka (Trade event)
-                   → EClearClient listens
-                   → POST to eClear /contract/matched
-                   → Kafka (TradeWait event)
-
-eClear → POST /contract/matched → Kafka (TradeAck event)
-                                → Trade state: E → O (Open)
+eClear Decision
+   │
+   ▼
+POST /contract/matched (EClearAPI)
+   │
+   ├─► status = "approved" ───► TradeAck (state: E → M)
+   │
+   └─► status = "rejected" ───► TradeNak (state: E → R)
+   │
+   ▼
+Kafka Event Published
+   │
+   ▼
+All Services Updated
 ```
 
-### Reimbursement Flow
+### EOD Cleanup
 
 ```
-eClear → POST /contract/reimburse → Kafka (TradeReimburse event)
-                                  → Trade state: O → C (Closed)
-                                  → If ARO: Create new Order
+End of Day
+   │
+   ▼
+EClearClient.CheckPendingTrades()
+   │
+   ▼
+Find all trades in state "E" (Approval/Wait)
+   │
+   ▼
+For each trade:
+   │
+   ├─► matched_at > 24 hours ago?
+   │
+   └─► YES ──────► TradeNak (timeout)
 ```
 
-### Lender Recall Flow
+## Trade States
+
+### State Flow
 
 ```
-eClear → POST /lender/recall → Kafka (Order event for re-matching)
-                             → OMS will match with new lender
-                             → Old contract terminated
-                             → New contract created
+M (Matched)
+   │
+   ├─► Sent to eClear ──────────► E (Approval/Wait)
+   │                                    │
+   │                                    ├─► Approved ──► M (Matched)
+   │                                    │
+   │                                    ├─► Rejected ──► R (Rejected)
+   │                                    │
+   │                                    └─► Timeout ───► R (Rejected)
+   │
+   └─► Reimbursed ──────────────► C (Closed)
+```
+
+### State Meanings
+
+- **M (Matched)** - Trade created, active
+- **E (Approval)** - Waiting for eClear approval
+- **R (Rejected)** - eClear rejected or timeout
+- **C (Closed)** - Trade settled/reimbursed
+
+## Configuration
+
+### Environment Variables
+
+```bash
+KAFKA_URL=localhost:9092      # Kafka broker
+KAFKA_TOPIC=pme-ledger        # Kafka topic
+API_PORT=8081                 # HTTP port
+ECLEAR_BASE_URL=http://localhost:9000  # eClear system URL
+```
+
+### eClear Endpoints (External)
+
+EClearAPI calls these eClear endpoints:
+- `POST /contract/matched` - Submit trade for approval
+
+## Startup Sequence
+
+```
+1. Create LedgerPoint
+   │
+2. Create EClearClient
+   │
+3. Get SyncHandler from EClearClient
+   │
+4. Subscribe to LedgerPoint events
+   │
+5. Start LedgerPoint
+   │
+6. Wait for IsReady
+   │
+7. Start EClearClient processing
+   │
+8. Create HTTP handlers
+   │
+9. Setup HTTP routes
+   │
+10. Start HTTP server
+   │
+11. Service ready
 ```
 
 ## Monitoring
 
-The service logs important events:
+### Log Patterns
 
-- `📥` Incoming requests from eClear
-- `✅` Successful operations
-- `❌` Errors and failures
-- `⚠️` Warnings (e.g., missing data, ineligible instruments)
-- `📤` Outbound requests to eClear
+**Outbound (to eClear):**
+```
+📤 Sending trade to eClear: KPEI-20251129-0001
+✅ Trade sent to eClear successfully: KPEI-20251129-0001
+❌ Failed to send trade to eClear: connection refused
+```
+
+**Inbound (from eClear):**
+```
+📨 POST /contract/matched
+✅ Trade approved: KPEI-20251129-0001
+❌ Trade rejected: KPEI-20251129-0001
+📨 POST /account/insert
+✅ Inserted 10 accounts
+```
+
+**EOD Cleanup:**
+```
+🔍 Checking for pending trades at EOD...
+⚠️  Trade KPEI-20251129-0001 not approved by EOD, dropping trade
+✅ Pending trades check completed
+```
 
 ## Error Handling
 
-The service handles various error scenarios:
+### Retry Logic
 
-1. **Invalid JSON**: Returns 400 Bad Request
-2. **Missing required fields**: Logs warning and skips record
-3. **Entity not found**: Returns 404 Not Found
-4. **eClear timeout**: Commits TradeWait event, marks for retry
-5. **EOD pending trades**: Automatically drops trades not approved by EOD
+Currently NO automatic retry:
+- Failed submissions log error and publish TradeWait
+- Manual intervention required for failed submissions
 
-## Integration with Other Services
+**Future Enhancement:**
+- Implement retry queue
+- Exponential backoff
+- Dead letter queue
+- Alert on persistent failures
 
-### OMS (Order Management System)
-- OMS creates Trade events when orders are matched
-- EClearClient listens to Trade events and sends to eClear
-- OMS processes TradeAck/TradeNak events from eClear
+### Timeout Handling
 
-### APME API
-- APME API creates Order events
-- Uses master data from Kafka (via LedgerPoint sync)
-- Displays trade/contract status to users
+Trades waiting for approval > 24 hours:
+- Automatically NAK'd at EOD
+- Prevents indefinite pending state
+- Message: "Trade not approved by eClear by EOD"
 
-### Database Exporter
-- Subscribes to all events and persists to PostgreSQL
-- Maintains audit trail of all master data changes
+## Security
 
-## Production Considerations
+**Current Implementation:**
+- No authentication on inbound endpoints
+- No authorization checks
+- HTTP (not HTTPS)
 
-1. **Retry Logic**: Implement exponential backoff for failed eClear requests
-2. **Queue Management**: Use persistent queue for pending trade submissions
-3. **Monitoring**: Set up alerts for failed trade submissions
-4. **Rate Limiting**: Implement rate limiting for eClear API calls
-5. **Security**: Add authentication/authorization for inbound endpoints
-6. **High Availability**: Run multiple instances behind load balancer
-7. **Circuit Breaker**: Implement circuit breaker pattern for eClear calls
+**Production Requirements:**
+- API key authentication from eClear
+- TLS/HTTPS for all communication
+- IP whitelist for eClear endpoints
+- Request signature verification
+- Audit logging
 
-## Troubleshooting
+## Dashboard
 
-### Service won't start
-- Check Kafka is running and accessible
-- Verify Kafka topic exists
-- Check port 8081 is not in use
+Static HTML dashboard served at `/` and `/dashboard`:
 
-### Master data not appearing
-- Check Kafka consumer logs
-- Verify JSON format matches expected structure
-- Check for validation errors in logs
+**Features:**
+- View participants, instruments, accounts
+- Update system parameters
+- Manage holidays
+- Update session times
+- Real-time statistics
 
-### Trade not sent to eClear
-- Check eClear base URL is correct
-- Verify network connectivity to eClear
-- Check for missing account/instrument data
-- Review EClearClient logs
+**Static Files:**
+```
+web/static/eclearapi/
+├── index.html
+├── css/
+│   └── style.css
+└── js/
+    └── app.js
+```
 
-### Trade stuck in Wait state
-- Check eClear returned success response
-- Verify eClear sent confirmation callback
-- Check EOD job is running to drop expired trades
+## Testing
+
+### Test eClear Integration
+
+```bash
+# Start EClearAPI
+./bin/eclearapi
+
+# Simulate eClear sending account data
+curl -X POST http://localhost:8081/account/insert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accounts": [{
+      "code": "ACC001",
+      "participant_code": "PART01",
+      "sid": "SID001"
+    }]
+  }'
+
+# Simulate eClear approving a trade
+curl -X POST http://localhost:8081/contract/matched \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pme_trade_reff": "KPEI-20251129-0001",
+    "status": "approved"
+  }'
+```
+
+### Mock eClear Server
+
+For testing outbound calls, run a mock eClear server:
+
+```go
+// mock_eclear.go
+http.HandleFunc("/contract/matched", func(w http.ResponseWriter, r *http.Request) {
+    log.Println("Received trade from PME")
+    w.WriteHeader(http.StatusOK)
+})
+http.ListenAndServe(":9000", nil)
+```
+
+## Integration Patterns
+
+### Pattern 1: Real-time Approval
+
+```
+Trade Matched → Send to eClear → Immediate Response → Publish Ack/Nak
+```
+
+Fastest path, requires eClear synchronous API.
+
+### Pattern 2: Async Approval (Current)
+
+```
+Trade Matched → Send to eClear → TradeWait
+                                     │
+eClear processes async ──────────────┘
+                                     │
+eClear calls back ──────────► TradeAck/Nak
+```
+
+Allows eClear to process asynchronously.
+
+### Pattern 3: Polling
+
+```
+Trade Matched → Send to eClear → TradeWait
+                                     │
+Poll eClear status every 30s ────────┤
+                                     │
+Status change ──────────────► TradeAck/Nak
+```
+
+Alternative when eClear doesn't support callbacks.
+
+## Future Enhancements
+
+- Automatic retry with exponential backoff
+- Circuit breaker for eClear connectivity
+- Message queue for reliable delivery
+- Idempotency keys for duplicate prevention
+- Webhook support for callbacks
+- Batch operations for master data
+- Real-time metrics dashboard
+- Integration tests with mock eClear
+- Support multiple eClear endpoints (failover)

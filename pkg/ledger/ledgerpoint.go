@@ -41,7 +41,6 @@ type LedgerPoint struct {
 
 	// Public fields (channels, config)
 	Commit  chan any
-	Sync    chan LedgerPointInterface
 	IsReady bool
 
 	// Private fields
@@ -236,7 +235,7 @@ func (lp *LedgerPoint) ForEachHoliday(fn func(HolidayEntity) bool) {
 	}
 }
 
-func CreateLedgerPoint(url string, topic string, id string, ctx context.Context) *LedgerPoint {
+func CreateLedgerPoint(url string, topic string, id string) *LedgerPoint {
 
 	point := LedgerPoint{
 		// Initialize private entity maps
@@ -250,7 +249,6 @@ func CreateLedgerPoint(url string, topic string, id string, ctx context.Context)
 
 		// Initialize public channels
 		Commit:  make(chan any, 1000),
-		Sync:    make(chan LedgerPointInterface, 1000),
 		IsReady: false,
 
 		// Initialize private fields
@@ -262,9 +260,16 @@ func CreateLedgerPoint(url string, topic string, id string, ctx context.Context)
 		lastOrderNID: 0,
 	}
 
-	go point.go_process(ctx)
-
 	return &point
+}
+
+func (obj *LedgerPoint) Start(subscriber []LedgerPointInterface, ctx context.Context) {
+	log.Println("🚀 Starting LedgerPoint processing...")
+	if subscriber != nil {
+		obj.allSync = subscriber
+	}
+
+	go obj.go_process(ctx)
 }
 
 func (obj *LedgerPoint) go_process(ctx context.Context) {
@@ -449,9 +454,6 @@ func (obj *LedgerPoint) go_process(ctx context.Context) {
 				json.Unmarshal(msg.Value, &eod)
 				obj.SyncEod(eod)
 			}
-
-		case sync := <-obj.Sync:
-			obj.allSync = append(obj.allSync, sync)
 
 		case <-ctx.Done():
 			r.Close()

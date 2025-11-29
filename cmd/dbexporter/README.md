@@ -1,420 +1,656 @@
-# Database Exporter Service
+# DBExporter - Database Export Service
 
-The Database Exporter service subscribes to all Kafka events from the PME Online system and persists them to a PostgreSQL database for historical queries, reporting, and auditing.
+## Overview
+
+DBExporter is a background service that consumes all events from the Kafka ledger and persists them to a PostgreSQL database. It provides a SQL-queryable historical record of all system activity for reporting, analytics, and audit purposes.
 
 ## Architecture
 
 ```
-┌───────┐     ┌──────────────┐     ┌────────────┐
-│ Kafka │────>│ DB Exporter  │────>│ PostgreSQL │
-│       │     │   Service    │     │  Database  │
-└───────┘     └──────────────┘     └────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                      DBExporter                         │
+│                                                         │
+│  ┌──────────────┐           ┌──────────────────────┐   │
+│  │   Exporter   │──────────►│    PostgreSQL        │   │
+│  │ (Subscriber) │           │     Database         │   │
+│  └──────┬───────┘           └──────────────────────┘   │
+│         │                                               │
+│         │                                               │
+│  ┌──────▼───────┐                                       │
+│  │ LedgerPoint  │                                       │
+│  └──────┬───────┘                                       │
+│         │                                               │
+└─────────┼───────────────────────────────────────────────┘
+          │
+          ▼
+   ┌─────────────┐
+   │    Kafka    │
+   │ "pme-ledger"│
+   └─────────────┘
 ```
 
-## Features
+## Components
 
-- Event-sourced persistence of all system events
-- Automatic database schema migration
-- Repository pattern for clean data access
-- Comprehensive event logging for audit trails
-- Real-time synchronization with Kafka events
-- Support for all entity types (orders, trades, contracts, accounts, etc.)
+### 1. Exporter (`internal/dbexporter/exporter/exporter.go`)
+
+Implements `LedgerPointInterface` to receive all events from Kafka and insert them into PostgreSQL.
+
+**Responsibilities:**
+- Subscribe to all ledger events
+- Map event structs to database rows
+- Insert records with proper timestamps
+- Handle database connection errors
+
+**Event Handlers:**
+All events are persisted to their respective tables:
+- `SyncOrder` → `orders` table
+- `SyncOrderAck` → `order_acks` table
+- `SyncTrade` → `trades` table
+- `SyncContract` → `contracts` table
+- `SyncAccount` → `accounts` table
+- etc.
+
+### 2. Database (`internal/dbexporter/db/database.go`)
+
+Manages PostgreSQL connection and migrations.
+
+**Responsibilities:**
+- Connect to PostgreSQL using environment variables
+- Run database migrations
+- Provide prepared statements for inserts
+- Handle connection pooling
+
+**Key Methods:**
+- `NewDBFromEnv()` - Create database connection from env vars
+- `RunMigrations(path)` - Execute SQL migration files
+- `Close()` - Close database connection
 
 ## Database Schema
 
-The service automatically creates the following tables:
+### Core Tables
 
-### Master Data Tables
-- **participants** - Securities trading participants (APME/PEI)
-- **instruments** - Trading instruments with eligibility status
-- **accounts** - Client accounts with limits
-- **holidays** - Non-trading days
-- **parameters** - System parameters (fees, limits)
-- **session_times** - Trading session schedules
+#### orders
+```sql
+CREATE TABLE orders (
+    nid BIGINT PRIMARY KEY,
+    account_code VARCHAR(50),
+    instrument_code VARCHAR(20),
+    side VARCHAR(4),  -- BORR or LEND
+    quantity DECIMAL(15,2),
+    quantity_left DECIMAL(15,2),
+    periode INT,
+    state VARCHAR(1),  -- S, O, P, M, W, R, G
+    settlement_date DATE,
+    aro_status BOOLEAN,
+    reff_request_id VARCHAR(100),
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+```
 
-### Transaction Tables
-- **orders** - Borrowing and lending orders
-- **trades** - Matched trades between parties
-- **contracts** - Individual contracts (borrower and lender sides)
+#### order_acks
+```sql
+CREATE TABLE order_acks (
+    id SERIAL PRIMARY KEY,
+    order_nid BIGINT REFERENCES orders(nid),
+    acknowledged_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### order_naks
+```sql
+CREATE TABLE order_naks (
+    id SERIAL PRIMARY KEY,
+    order_nid BIGINT REFERENCES orders(nid),
+    message TEXT,
+    rejected_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### trades
+```sql
+CREATE TABLE trades (
+    nid BIGINT PRIMARY KEY,
+    kpei_reff VARCHAR(100) UNIQUE,
+    instrument_code VARCHAR(20),
+    quantity DECIMAL(15,2),
+    periode INT,
+    state VARCHAR(1),  -- M, E, C, R
+    matched_at TIMESTAMP,
+    reimburse_at TIMESTAMP,
+    fee_flat_rate DECIMAL(10,6),
+    fee_borr_rate DECIMAL(10,6),
+    fee_lend_rate DECIMAL(10,6),
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+```
+
+#### contracts
+```sql
+CREATE TABLE contracts (
+    nid BIGINT PRIMARY KEY,
+    trade_nid BIGINT REFERENCES trades(nid),
+    order_nid BIGINT REFERENCES orders(nid),
+    kpei_reff VARCHAR(100),
+    account_code VARCHAR(50),
+    instrument_code VARCHAR(20),
+    side VARCHAR(4),
+    quantity DECIMAL(15,2),
+    state VARCHAR(1),  -- A, C, T
+    matched_at TIMESTAMP,
+    reimburse_at TIMESTAMP,
+    fee_flat_val DECIMAL(15,2),
+    fee_val_daily DECIMAL(15,2),
+    created_at TIMESTAMP
+);
+```
+
+#### accounts
+```sql
+CREATE TABLE accounts (
+    code VARCHAR(50) PRIMARY KEY,
+    participant_code VARCHAR(50),
+    sid VARCHAR(50),
+    trade_limit DECIMAL(20,2),
+    pool_limit DECIMAL(20,2),
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+```
+
+#### participants
+```sql
+CREATE TABLE participants (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(200),
+    created_at TIMESTAMP
+);
+```
+
+#### instruments
+```sql
+CREATE TABLE instruments (
+    code VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(200),
+    status BOOLEAN,  -- eligible for trading
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+```
 
 ### Audit Tables
-- **event_log** - Complete audit trail of all events in JSONB format
-- **service_starts** - Service startup tracking
+
+#### parameters
+```sql
+CREATE TABLE parameters (
+    id SERIAL PRIMARY KEY,
+    fee_flat_rate DECIMAL(10,6),
+    fee_borr_rate DECIMAL(10,6),
+    fee_lend_rate DECIMAL(10,6),
+    auto_match_flag BOOLEAN,
+    effective_from TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### holidays
+```sql
+CREATE TABLE holidays (
+    nid INT PRIMARY KEY,
+    date DATE,
+    description VARCHAR(200),
+    created_at TIMESTAMP
+);
+```
+
+#### session_times
+```sql
+CREATE TABLE session_times (
+    id SERIAL PRIMARY KEY,
+    pre_opening_time TIME,
+    opening_time TIME,
+    closing_time TIME,
+    effective_from TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+## Event Flow
+
+```
+Kafka Event
+   │
+   ▼
+LedgerPoint reads from Kafka
+   │
+   ▼
+LedgerPoint updates internal state
+   │
+   ▼
+LedgerPoint calls Exporter.Sync*() method
+   │
+   ▼
+Exporter maps event to SQL INSERT
+   │
+   ▼
+Execute INSERT statement
+   │
+   ├─► Success ──────► Log success
+   │
+   └─► Error ───────► Log error, continue
+```
+
+## Data Flow Examples
+
+### Order Lifecycle
+
+```sql
+-- 1. Order created
+INSERT INTO orders (nid, account_code, state, ...)
+VALUES (123, 'ACC001', 'S', ...);
+
+-- 2. Order acknowledged
+INSERT INTO order_acks (order_nid, acknowledged_at)
+VALUES (123, NOW());
+
+UPDATE orders SET state = 'O' WHERE nid = 123;
+
+-- 3. Order matched
+UPDATE orders SET state = 'M' WHERE nid = 123;
+
+INSERT INTO trades (nid, kpei_reff, state, ...)
+VALUES (456, 'KPEI-20251129-0001', 'M', ...);
+
+INSERT INTO contracts (nid, trade_nid, order_nid, ...)
+VALUES (789, 456, 123, ...);
+```
+
+### Trade Approval
+
+```sql
+-- 1. Trade created (matched)
+INSERT INTO trades (nid, state, ...)
+VALUES (456, 'M', ...);
+
+-- 2. Trade sent to eClear
+UPDATE trades SET state = 'E' WHERE nid = 456;
+
+-- 3. eClear approved
+UPDATE trades SET state = 'M' WHERE nid = 456;
+
+-- 4. Trade reimbursed
+UPDATE trades SET state = 'C' WHERE nid = 456;
+UPDATE contracts SET state = 'C' WHERE trade_nid = 456;
+```
 
 ## Configuration
 
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KAFKA_URL` | `localhost:9092` | Kafka broker URL |
-| `KAFKA_TOPIC` | `pme-ledger` | Kafka topic name |
-| `DB_HOST` | `localhost` | PostgreSQL host |
-| `DB_PORT` | `5432` | PostgreSQL port |
-| `DB_USER` | `pmeuser` | Database username |
-| `DB_PASSWORD` | `pmepass` | Database password |
-| `DB_NAME` | `pmedb` | Database name |
-| `DB_SSLMODE` | `disable` | SSL mode (disable, require, verify-full) |
-
-## Running
-
-### Prerequisites
-
-1. Kafka must be running
-2. PostgreSQL must be running
-3. Database and user must be created
-
-### Create PostgreSQL Database
+### Environment Variables
 
 ```bash
-# Connect to PostgreSQL
-psql -U postgres
+# Kafka
+KAFKA_URL=localhost:9092
+KAFKA_TOPIC=pme-ledger
 
-# Create database and user
-CREATE DATABASE pmedb;
-CREATE USER pmeuser WITH PASSWORD 'pmepass';
-GRANT ALL PRIVILEGES ON DATABASE pmedb TO pmeuser;
-\q
+# PostgreSQL
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=pme_user
+DB_PASSWORD=pme_password
+DB_NAME=pme_db
+DB_SSLMODE=disable
 ```
 
-### Start the service
+### Database Connection String
 
+Built from environment variables:
+```
+postgresql://user:password@host:port/dbname?sslmode=disable
+```
+
+## Migrations
+
+### Migration Files
+
+Located in `migrations/` directory:
+
+```sql
+-- migrations/001_create_tables.sql
+CREATE TABLE IF NOT EXISTS orders (
+    nid BIGINT PRIMARY KEY,
+    ...
+);
+
+CREATE TABLE IF NOT EXISTS trades (
+    nid BIGINT PRIMARY KEY,
+    ...
+);
+
+-- Add indexes
+CREATE INDEX idx_orders_account ON orders(account_code);
+CREATE INDEX idx_orders_state ON orders(state);
+CREATE INDEX idx_trades_kpei ON trades(kpei_reff);
+```
+
+### Running Migrations
+
+Migrations run automatically on service startup:
+```go
+database.RunMigrations("migrations/001_create_tables.sql")
+```
+
+## Startup Sequence
+
+```
+1. Load configuration from environment
+   │
+2. Connect to PostgreSQL
+   │
+3. Run database migrations
+   │
+4. Create Exporter
+   │
+5. Create LedgerPoint
+   │
+6. Subscribe Exporter to LedgerPoint
+   │
+7. Start LedgerPoint (Kafka consumer)
+   │
+8. Service runs until interrupted
+   │
+9. Graceful shutdown
+```
+
+## Querying Data
+
+### Common Queries
+
+#### Get all orders for an account
+```sql
+SELECT * FROM orders 
+WHERE account_code = 'ACC001'
+ORDER BY created_at DESC;
+```
+
+#### Get all trades in a date range
+```sql
+SELECT * FROM trades
+WHERE matched_at BETWEEN '2025-11-01' AND '2025-11-30'
+ORDER BY matched_at DESC;
+```
+
+#### Get active contracts
+```sql
+SELECT c.*, t.kpei_reff, o.account_code
+FROM contracts c
+JOIN trades t ON c.trade_nid = t.nid
+JOIN orders o ON c.order_nid = o.nid
+WHERE c.state = 'A';
+```
+
+#### Trading volume by instrument
+```sql
+SELECT 
+    instrument_code,
+    COUNT(*) as trade_count,
+    SUM(quantity) as total_quantity
+FROM trades
+WHERE matched_at >= CURRENT_DATE
+GROUP BY instrument_code
+ORDER BY total_quantity DESC;
+```
+
+#### Account activity summary
+```sql
+SELECT 
+    account_code,
+    COUNT(DISTINCT CASE WHEN side = 'BORR' THEN nid END) as borr_orders,
+    COUNT(DISTINCT CASE WHEN side = 'LEND' THEN nid END) as lend_orders,
+    SUM(CASE WHEN side = 'BORR' AND state = 'M' THEN quantity ELSE 0 END) as borr_matched,
+    SUM(CASE WHEN side = 'LEND' AND state = 'M' THEN quantity ELSE 0 END) as lend_matched
+FROM orders
+WHERE created_at >= CURRENT_DATE
+GROUP BY account_code;
+```
+
+#### Rejected orders analysis
+```sql
+SELECT 
+    DATE(rejected_at) as date,
+    COUNT(*) as rejection_count,
+    string_agg(DISTINCT message, '; ') as rejection_reasons
+FROM order_naks
+GROUP BY DATE(rejected_at)
+ORDER BY date DESC;
+```
+
+## Monitoring
+
+### Log Patterns
+
+**Startup:**
+```
+[DB-EXPORTER] Starting Database Exporter Service...
+[DB-EXPORTER] Kafka URL: localhost:9092
+[DB-EXPORTER] Kafka Topic: pme-ledger
+[DB-EXPORTER] Connected to database
+[DB-EXPORTER] Running migrations...
+[DB-EXPORTER] Migrations completed successfully
+[DB-EXPORTER] Database Exporter Service started successfully
+[DB-EXPORTER] Listening for Kafka events...
+```
+
+**Runtime:**
+```
+[EXPORTER] Inserted order: 123
+[EXPORTER] Inserted trade: 456
+[EXPORTER] Updated order state: 123 -> M
+[EXPORTER] Error inserting order: duplicate key value
+```
+
+### Health Monitoring
+
+Check database connectivity:
+```sql
+SELECT COUNT(*) FROM orders;
+```
+
+Check replication lag:
+```sql
+SELECT MAX(created_at) as latest_event FROM orders;
+```
+
+Compare with Kafka latest offset to detect lag.
+
+## Error Handling
+
+### Database Errors
+
+**Connection Lost:**
+- Service will exit
+- Restart required (use systemd or similar)
+- Future: Implement reconnection logic
+
+**Constraint Violations:**
+- Log error and continue
+- Duplicate key violations are logged but don't stop service
+- Foreign key violations indicate data inconsistency
+
+**Transaction Failures:**
+- Each insert is independent (no transactions)
+- Failure doesn't affect subsequent events
+- Data may be incomplete for a single event
+
+## Performance Considerations
+
+### Throughput
+
+Expected performance:
+- 100-1000 events/second (single instance)
+- Limited by database write performance
+- No batching currently implemented
+
+### Optimization Strategies
+
+1. **Batch Inserts** - Group multiple inserts
+2. **Connection Pooling** - Reuse database connections
+3. **Prepared Statements** - Reduce query parsing overhead
+4. **Indexes** - Add indexes for common queries
+5. **Partitioning** - Partition large tables by date
+
+### Indexing
+
+Critical indexes:
+```sql
+CREATE INDEX idx_orders_account ON orders(account_code);
+CREATE INDEX idx_orders_state ON orders(state);
+CREATE INDEX idx_orders_created ON orders(created_at);
+CREATE INDEX idx_trades_kpei ON trades(kpei_reff);
+CREATE INDEX idx_trades_matched ON trades(matched_at);
+CREATE INDEX idx_contracts_trade ON contracts(trade_nid);
+CREATE INDEX idx_contracts_account ON contracts(account_code);
+```
+
+## Backup and Recovery
+
+### Backup Strategy
+
+**PostgreSQL Backups:**
 ```bash
-# Using default configuration
-cd cmd/dbexporter
-go run main.go
+# Full backup
+pg_dump -U pme_user pme_db > backup_$(date +%Y%m%d).sql
 
-# Using custom configuration
-DB_HOST=localhost \
-DB_PORT=5432 \
-DB_USER=pmeuser \
-DB_PASSWORD=pmepass \
-DB_NAME=pmedb \
-KAFKA_URL=localhost:9092 \
-KAFKA_TOPIC=pme-ledger \
-go run main.go
+# Compressed backup
+pg_dump -U pme_user pme_db | gzip > backup_$(date +%Y%m%d).sql.gz
+```
 
-# Or use Make
-make run-dbexporter
+**Automated Backups:**
+- Daily full backups
+- 30-day retention
+- Store offsite (S3, cloud storage)
+
+### Recovery
+
+**From Backup:**
+```bash
+# Restore from backup
+psql -U pme_user pme_db < backup_20251129.sql
+```
+
+**From Kafka:**
+```bash
+# Delete all data
+psql -U pme_user pme_db -c "TRUNCATE orders, trades, contracts CASCADE;"
+
+# Restart DBExporter (replays from Kafka beginning)
+./bin/dbexporter
+```
+
+## Data Retention
+
+### Archival Strategy
+
+Move old data to archive tables:
+```sql
+-- Archive old orders (older than 1 year)
+INSERT INTO orders_archive 
+SELECT * FROM orders WHERE created_at < NOW() - INTERVAL '1 year';
+
+DELETE FROM orders WHERE created_at < NOW() - INTERVAL '1 year';
+```
+
+### Purge Old Data
+
+For compliance or storage limits:
+```sql
+-- Delete orders older than 7 years
+DELETE FROM order_acks 
+WHERE order_nid IN (
+    SELECT nid FROM orders 
+    WHERE created_at < NOW() - INTERVAL '7 years'
+);
+
+DELETE FROM orders WHERE created_at < NOW() - INTERVAL '7 years';
+```
+
+## Analytics and Reporting
+
+### Business Intelligence Queries
+
+#### Daily Trading Report
+```sql
+SELECT 
+    DATE(matched_at) as trading_date,
+    instrument_code,
+    COUNT(*) as trades_count,
+    SUM(quantity) as total_quantity,
+    AVG(quantity) as avg_quantity
+FROM trades
+WHERE state = 'M'
+GROUP BY DATE(matched_at), instrument_code
+ORDER BY trading_date DESC, total_quantity DESC;
+```
+
+#### Account Performance
+```sql
+SELECT 
+    a.code,
+    a.participant_code,
+    COUNT(DISTINCT o.nid) as total_orders,
+    COUNT(DISTINCT CASE WHEN o.state = 'M' THEN o.nid END) as matched_orders,
+    SUM(CASE WHEN o.state = 'M' THEN o.quantity ELSE 0 END) as total_volume
+FROM accounts a
+LEFT JOIN orders o ON a.code = o.account_code
+WHERE o.created_at >= DATE_TRUNC('month', CURRENT_DATE)
+GROUP BY a.code, a.participant_code
+ORDER BY total_volume DESC;
 ```
 
 ## Testing
 
-### 1. Start Infrastructure
+### Manual Testing
 
 ```bash
-# Start Kafka and PostgreSQL
-make setup
+# Start service
+./bin/dbexporter
+
+# In another terminal, check database
+psql -U pme_user pme_db -c "SELECT COUNT(*) FROM orders;"
+
+# Submit test order (via pmeapi)
+# Check if order appears in database
+psql -U pme_user pme_db -c "SELECT * FROM orders ORDER BY created_at DESC LIMIT 1;"
 ```
 
-### 2. Create PostgreSQL Database
+### Data Validation
 
+Compare Kafka events with database records:
 ```bash
-# Using docker-compose PostgreSQL
-docker exec -it pme-postgres psql -U postgres -c "CREATE DATABASE pmedb;"
-docker exec -it pme-postgres psql -U postgres -c "CREATE USER pmeuser WITH PASSWORD 'pmepass';"
-docker exec -it pme-postgres psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE pmedb TO pmeuser;"
+# Count events in Kafka
+kafka-console-consumer --bootstrap-server localhost:9092 \
+    --topic pme-ledger --from-beginning | wc -l
+
+# Count records in database
+psql -U pme_user pme_db -c "
+    SELECT 
+        (SELECT COUNT(*) FROM orders) + 
+        (SELECT COUNT(*) FROM trades) + 
+        (SELECT COUNT(*) FROM contracts) as total_records;
+"
 ```
 
-### 3. Start Services in Order
-
-```bash
-# Terminal 1: DB Exporter
-make run-dbexporter
-
-# Terminal 2: eClear API
-make run-eclearapi
-
-# Terminal 3: Populate master data
-make test-eclearapi
-
-# Terminal 4: OMS
-make run-pmeoms
-
-# Terminal 5: APME API
-make run-pmeapi
-```
-
-### 4. Verify Data Export
-
-```bash
-# Connect to PostgreSQL
-docker exec -it pme-postgres psql -U pmeuser -d pmedb
-
-# Check data
-SELECT COUNT(*) FROM participants;
-SELECT COUNT(*) FROM instruments;
-SELECT COUNT(*) FROM accounts;
-SELECT COUNT(*) FROM orders;
-SELECT COUNT(*) FROM trades;
-SELECT COUNT(*) FROM contracts;
-
-# View recent events
-SELECT event_type, COUNT(*) 
-FROM event_log 
-GROUP BY event_type 
-ORDER BY COUNT(*) DESC;
-
-# View recent events with data
-SELECT id, event_type, timestamp, event_data 
-FROM event_log 
-ORDER BY timestamp DESC 
-LIMIT 10;
-```
-
-## Repository Pattern
-
-The service uses a repository pattern for clean separation of concerns:
-
-### Repositories
-
-- **ParticipantRepository** - CRUD operations for participants
-- **InstrumentRepository** - CRUD operations for instruments
-- **AccountRepository** - CRUD operations for accounts and limits
-- **OrderRepository** - CRUD operations for orders
-- **TradeRepository** - CRUD operations for trades
-- **ContractRepository** - CRUD operations for contracts
-- **OtherRepository** - Operations for parameters, holidays, events
-
-### Example Usage
-
-```go
-// Create repository
-repo := repository.NewParticipantRepository(db)
-
-// Upsert participant
-err := repo.Upsert(participant)
-
-// Update order state
-err := orderRepo.UpdateState(orderNID, "O", doneQuantity)
-```
-
-## Event Synchronization
-
-The service implements the `LedgerPointInterface` to receive all events:
-
-```go
-type Exporter struct {
-    participantRepo *repository.ParticipantRepository
-    instrumentRepo  *repository.InstrumentRepository
-    accountRepo     *repository.AccountRepository
-    orderRepo       *repository.OrderRepository
-    tradeRepo       *repository.TradeRepository
-    contractRepo    *repository.ContractRepository
-    otherRepo       *repository.OtherRepository
-}
-
-// Implement sync methods
-func (e *Exporter) SyncOrder(o ledger.Order) { ... }
-func (e *Exporter) SyncTrade(t ledger.Trade) { ... }
-func (e *Exporter) SyncContract(c ledger.Contract) { ... }
-// ... and more
-```
-
-## Database Queries
-
-### Common Queries
-
-```sql
--- Get all open orders
-SELECT * FROM orders WHERE state = 'O' ORDER BY entry_at DESC;
-
--- Get orders by participant
-SELECT * FROM orders WHERE participant_code = 'YU' ORDER BY entry_at DESC;
-
--- Get contracts with fees
-SELECT 
-    c.*, 
-    t.kpei_reff, 
-    t.matched_at
-FROM contracts c
-JOIN trades t ON c.trade_nid = t.nid
-WHERE c.state = 'O'
-ORDER BY c.matched_at DESC;
-
--- Calculate total fees by participant
-SELECT 
-    account_participant_code,
-    side,
-    SUM(fee_val_accumulated) as total_fees,
-    COUNT(*) as contract_count
-FROM contracts
-WHERE state = 'O'
-GROUP BY account_participant_code, side;
-
--- Get SBL aggregate by instrument
-SELECT 
-    instrument_code,
-    SUM(CASE WHEN side = 'BORR' THEN quantity ELSE 0 END) as borrow_quantity,
-    SUM(CASE WHEN side = 'LEND' THEN quantity ELSE 0 END) as lend_quantity
-FROM orders
-WHERE state IN ('O', 'P')
-GROUP BY instrument_code;
-
--- Event log statistics
-SELECT 
-    event_type,
-    COUNT(*) as count,
-    MIN(timestamp) as first_event,
-    MAX(timestamp) as last_event
-FROM event_log
-GROUP BY event_type
-ORDER BY count DESC;
-```
-
-## Migration Management
-
-The service automatically runs migrations on startup. Migration files are located in `migrations/`:
-
-- `001_create_tables.sql` - Initial schema creation
-
-To add new migrations:
-
-1. Create a new SQL file in `migrations/` (e.g., `002_add_indexes.sql`)
-2. Update `main.go` to run the new migration
-3. The service will apply it on next startup
-
-## Performance Considerations
-
-### Indexes
-
-The schema includes indexes on:
-- Primary keys (nid columns)
-- Foreign keys (participant_code, instrument_code, account_code, etc.)
-- Frequently queried fields (state, side, dates)
-
-### Connection Pooling
-
-The service uses connection pooling for optimal performance:
-- Max open connections: 25
-- Max idle connections: 5
-- Connection max lifetime: 5 minutes
-
-### Event Logging
-
-All events are logged to the `event_log` table in JSONB format for:
-- Complete audit trail
-- Forensic analysis
-- Debugging
-- Compliance
-
-## Troubleshooting
-
-### Service won't start
-
-**Check PostgreSQL connection:**
-```bash
-# Test connection
-psql -h localhost -U pmeuser -d pmedb -c "SELECT 1;"
-
-# Check environment variables
-echo $DB_HOST
-echo $DB_USER
-echo $DB_NAME
-```
-
-### Migration fails
-
-**Check permissions:**
-```sql
--- Grant schema permissions
-GRANT ALL ON SCHEMA public TO pmeuser;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pmeuser;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pmeuser;
-```
-
-### No events being written
-
-**Check Kafka connection:**
-```bash
-# Verify events in Kafka
-docker exec pme-kafka kafka-console-consumer.sh \
-    --bootstrap-server localhost:9092 \
-    --topic pme-ledger \
-    --from-beginning \
-    --max-messages 10
-```
-
-**Check service logs:**
-- Look for "[DB-EXPORTER]" prefix in logs
-- Check for connection errors
-- Verify repository operations
-
-### Data inconsistencies
-
-**Check event log:**
-```sql
--- Find failed operations in logs
-SELECT * FROM event_log 
-WHERE event_data::text LIKE '%error%' 
-ORDER BY timestamp DESC;
-
--- Compare event counts
-SELECT 
-    (SELECT COUNT(*) FROM orders) as orders_count,
-    (SELECT COUNT(*) FROM event_log WHERE event_type LIKE 'Order%') as order_events_count;
-```
-
-## Production Considerations
-
-1. **Backup Strategy**
-   - Regular PostgreSQL backups
-   - Point-in-time recovery enabled
-   - Transaction log archiving
-
-2. **Monitoring**
-   - Database connection health
-   - Event processing lag
-   - Disk space usage
-   - Query performance
-
-3. **Scaling**
-   - Read replicas for reporting queries
-   - Partitioning for large tables (orders, trades, contracts)
-   - Archive old data to cold storage
-
-4. **Security**
-   - Use SSL/TLS for database connections
-   - Encrypt sensitive data at rest
-   - Implement proper access controls
-   - Regular security audits
-
-5. **Maintenance**
-   - Regular VACUUM and ANALYZE
-   - Index maintenance
-   - Partition management
-   - Log rotation
-
-## Architecture Notes
-
-### Event Sourcing Pattern
-
-The service follows event sourcing principles:
-- All state changes come from Kafka events
-- Events are immutable once logged
-- Database represents current state + history
-- Event log provides complete audit trail
-
-### CQRS Pattern
-
-The service acts as the "Write" side of CQRS:
-- Commands (events) are written to database
-- Queries can be optimized separately
-- Read models can be materialized views
-- Reporting queries don't impact write performance
-
-### Idempotency
-
-All repository operations are designed to be idempotent:
-- Upserts use `ON CONFLICT` clauses
-- Timestamps track last update
-- Duplicate events are handled gracefully
-
-## Build Information
-
-**Binary Size:** ~9.5 MB  
-**Go Version:** 1.23+  
-**Dependencies:**
-- github.com/lib/pq - PostgreSQL driver
-- github.com/segmentio/kafka-go - Kafka client
-- pmeonline/pkg/ledger - Event sourcing framework
+## Future Enhancements
+
+- Implement batch inserts for better performance
+- Add database connection retry logic
+- Support multiple database backends (MySQL, SQLite)
+- Add metrics and monitoring (Prometheus)
+- Implement data validation and checksums
+- Add read replicas for analytics queries
+- Support event replay for data correction
+- Add materialized views for common reports
+- Implement change data capture (CDC)
+- Add real-time dashboards (Grafana)

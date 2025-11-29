@@ -2,6 +2,8 @@
 
 A microservices-based system for securities borrowing and lending (SBL) operations, built with Go and event-driven architecture using Kafka.
 
+Please read detailed design in `docs/design.md` document. This is the first document to started this project.
+
 ## Architecture Overview
 
 ```
@@ -33,6 +35,8 @@ A microservices-based system for securities borrowing and lending (SBL) operatio
 - **Port:** 8081
 - **Status:** Ready for testing
 
+Please read detailed implementation in `cmd/eclearapi/README.md` document.
+
 ### 2. OMS (Order Management System) ✅ (Implemented)
 - Validates orders with risk management rules (pkg/risk)
 - Matches borrowing and lending orders (pkg/oms)
@@ -40,13 +44,18 @@ A microservices-based system for securities borrowing and lending (SBL) operatio
 - Handles order lifecycle (New, Open, Matched, etc.)
 - **Status:** Ready for testing
 
+Please read detailed implementation in `cmd/pmeoms/README.md` document.
+
 ### 3. APME API Service ✅ (Implemented)
 - REST API for order entry, amendment, and withdrawal
-- WebSocket notifications for real-time updates
+- WebSocket notifications with DropCopy protocol (sequenced, buffered, recoverable)
 - Query APIs for order list, contract list, SBL display
 - Web-based test dashboard with auto-populated forms
+- Real-time event streaming to clients
 - **Port:** 8080
 - **Status:** Ready for testing
+
+Please read detailed implementation in `cmd/pmeapi/README.md` document.
 
 ### 4. Database Exporter ✅ (Implemented)
 - Persists all events to PostgreSQL
@@ -54,6 +63,8 @@ A microservices-based system for securities borrowing and lending (SBL) operatio
 - Repository pattern for clean data access
 - Automatic database schema migration
 - **Status:** Ready for testing
+
+Please read detailed implementation in `cmd/dbexporter/README.md` document.
 
 ## Technology Stack
 
@@ -111,12 +122,12 @@ docker-compose up -d
 # Wait for Kafka to be ready (about 10 seconds)
 sleep 10
 
-# Create Kafka topic
+# Create Kafka topic (single partition for ordering)
 docker exec pme-kafka kafka-topics.sh \
   --create \
   --topic pme-ledger \
   --bootstrap-server localhost:9092 \
-  --partitions 3 \
+  --partitions 1 \
   --replication-factor 1
 
 # Run eClear API
@@ -152,6 +163,12 @@ pmeonline/
 ├── internal/                    # Private application code (unexportable)
 │   ├── eclearapi/
 │   │   └── handler/             # HTTP handlers, eClear client
+│   ├── pmeoms/
+│   │   ├── oms.go               # OMS orchestrator
+│   │   ├── matcher.go           # Order matching engine (FIFO)
+│   │   ├── orderbook.go         # Order book management
+│   │   ├── tradegen.go          # Trade & contract generator
+│   │   └── sync_handler.go      # Event subscriber
 │   ├── pmeapi/
 │   │   ├── handler/             # REST API handlers
 │   │   ├── middleware/          # HTTP middleware
@@ -165,16 +182,14 @@ pmeonline/
 │   ├── ledger/                  # Event-sourcing framework
 │   │   ├── entities.go          # Domain entities
 │   │   ├── entries.go           # Event types
-│   │   └── ledgerpoint.go       # Event bus & state sync
-│   ├── risk/                    # Risk management
-│   │   ├── validator.go         # Pre-trade validation
-│   │   ├── calculator.go        # Fee calculations
-│   │   └── checker.go           # Eligibility monitoring
-│   └── oms/                     # Order matching engine
-│       ├── oms.go               # OMS orchestrator
-│       ├── orderbook.go         # Order book per instrument
-│       ├── matcher.go           # Matching algorithm
-│       └── tradegen.go          # Trade & contract generator
+│   │   ├── ledgerpoint.go       # Event bus & state sync
+│   │   ├── README.md            # Ledger system documentation
+│   │   └── risk/                # Risk management
+│   │       ├── validator.go     # Pre-trade validation
+│   │       ├── calculator.go    # Fee calculations
+│   │       └── checker.go       # Eligibility monitoring
+│   └── idgen/                   # Snowflake ID generator
+│       └── generator.go         # Distributed unique IDs
 │
 ├── web/                         # Web assets (static files)
 │   └── static/
@@ -372,14 +387,39 @@ DB Exporter persists to PostgreSQL
 
 ## Configuration
 
-Environment variables for eClear API Service:
+### Environment Variables
+
+**Common (All Services):**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KAFKA_URL` | `localhost:9092` | Kafka broker address |
 | `KAFKA_TOPIC` | `pme-ledger` | Kafka topic name |
+
+**PMEAPI:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_PORT` | `8080` | HTTP server port |
+| `INSTANCE_ID` | `0` | Snowflake ID instance (0-1023) |
+
+**EClearAPI:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `API_PORT` | `8081` | HTTP server port |
 | `ECLEAR_BASE_URL` | `http://localhost:9000` | eClear system URL |
+
+**DBExporter:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_USER` | `pmeuser` | Database username |
+| `DB_PASSWORD` | `pmepassword` | Database password |
+| `DB_NAME` | `pmedb` | Database name |
+| `DB_SSLMODE` | `disable` | SSL mode |
 
 ## Development
 
@@ -440,11 +480,11 @@ The system is now in the **testing and integration phase**. See individual servi
 ## Documentation
 
 - [System Design](docs/design.md) - Complete system specification
-- [Production Deployment](docs/deployment.md) - Deployment guide for distributed systems
-- [eClear API Documentation](cmd/eclearapi/readme.md) - eClear API service guide
-- [OMS Documentation](cmd/pmeoms/readme.md) - Order Management System guide
-- [APME API Documentation](cmd/pmeapi/readme.md) - APME API service guide
-- [DB Exporter Documentation](cmd/dbexporter/readme.md) - Database Exporter guide
+- [Ledger System](pkg/ledger/README.md) - Event-sourcing framework and Kafka integration
+- [eClear API Service](cmd/eclearapi/README.md) - eClear integration guide
+- [PMEOMS Service](cmd/pmeoms/README.md) - Order Management System guide
+- [PMEAPI Service](cmd/pmeapi/README.md) - REST API and WebSocket guide
+- [DBExporter Service](cmd/dbexporter/README.md) - Database persistence guide
 
 ## License
 
@@ -453,6 +493,6 @@ Proprietary - KPEI (Indonesia Clearing and Guarantee Corporation)
 ## Support
 
 For questions or issues, please refer to:
-- System design: `CLAUDE.md`
-- Implementation plan: `IMPLEMENTATION_PLAN.md`
+- System design: `docs/design.md`
+- Ledger system: `pkg/ledger/README.md`
 - Service-specific docs: `cmd/*/README.md`

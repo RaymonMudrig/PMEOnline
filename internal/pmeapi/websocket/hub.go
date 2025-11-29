@@ -43,8 +43,10 @@ func (h *Hub) Run(ctx context.Context) {
 			h.clients[client] = true
 			log.Printf("[WS-HUB] Client registered: %s (total: %d)", client.id, len(h.clients))
 
-			// Send recovery messages if client requested a specific sequence
-			go h.sendRecoveryMessages(client)
+			// Send recovery messages only if client has sent subscribe message
+			if client.hasSubscribed {
+				go h.sendRecoveryMessages(client)
+			}
 
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
@@ -87,12 +89,12 @@ func (h *Hub) Run(ctx context.Context) {
 
 // sendRecoveryMessages sends buffered messages to a newly connected client
 func (h *Hub) sendRecoveryMessages(client *Client) {
-	if client.requestedSeq == 0 {
-		// Client didn't request specific sequence, send buffer info only
-		h.sendBufferInfo(client)
-		return
-	}
+	// Log buffer state
+	size, capacity, oldest, latest := h.buffer.GetBufferInfo()
+	log.Printf("[WS-HUB] Buffer state: size=%d/%d, oldest_seq=%d, latest_seq=%d",
+		size, capacity, oldest, latest)
 
+	// Get notifications from requested sequence (0 means from oldest available)
 	notifications, allAvailable := h.buffer.GetFrom(client.requestedSeq)
 
 	if !allAvailable {

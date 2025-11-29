@@ -13,19 +13,30 @@ import (
 )
 
 type EClearClient struct {
-	baseURL    string
-	httpClient *http.Client
-	ledger     *ledger.LedgerPoint
+	baseURL     string
+	httpClient  *http.Client
+	ledger      *ledger.LedgerPoint
+	syncHandler *EClearSyncHandler
 }
 
 func NewEClearClient(baseURL string, l *ledger.LedgerPoint) *EClearClient {
-	return &EClearClient{
+	client := &EClearClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 		ledger: l,
 	}
+
+	// Create sync handler
+	client.syncHandler = &EClearSyncHandler{client: client}
+
+	return client
+}
+
+// GetSyncHandler returns the sync handler for LedgerPoint subscription
+func (c *EClearClient) GetSyncHandler() *EClearSyncHandler {
+	return c.syncHandler
 }
 
 // TradeMatchedPayload represents the payload sent to eClear for trade approval
@@ -54,15 +65,9 @@ type ContractInfo struct {
 	FeeBorrower     float64 `json:"fee_borrower,omitempty"`
 }
 
-// Start begins listening to Trade events and sends them to eClear
-func (c *EClearClient) Start(ctx context.Context) {
-	log.Println("🚀 Starting eClear outbound client...")
-
-	// Create a sync handler to subscribe to Trade events
-	syncHandler := &EClearSyncHandler{client: c}
-	c.ledger.Sync <- syncHandler
-
-	log.Println("✅ eClear outbound client started and subscribed to events")
+// RunProcessing runs the main processing loop (waits for context cancellation)
+func (c *EClearClient) RunProcessing(ctx context.Context) {
+	log.Println("✅ eClear outbound client is now processing events")
 
 	// Wait for context cancellation
 	<-ctx.Done()

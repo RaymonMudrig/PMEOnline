@@ -28,7 +28,22 @@ func main() {
 
 	// Initialize LedgerPoint
 	log.Println("📊 Initializing LedgerPoint...")
-	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "eclearapi", ctx)
+	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "eclearapi")
+
+	// Initialize outbound client (for sending trades to eClear)
+	// This must be created BEFORE starting LedgerPoint to receive all events
+	log.Println("📤 Initializing eClear outbound client...")
+	eclearClient := handler.NewEClearClient(eclearBaseURL, ledgerPoint)
+	eclearSyncHandler := eclearClient.GetSyncHandler()
+
+	// Collect all subscribers
+	subscribers := []ledger.LedgerPointInterface{
+		eclearSyncHandler,
+	}
+
+	// Start LedgerPoint with all subscribers
+	log.Println("🚀 Starting LedgerPoint with subscribers...")
+	ledgerPoint.Start(subscribers, ctx)
 
 	// Wait for LedgerPoint to be ready
 	log.Println("⏳ Waiting for LedgerPoint to be ready...")
@@ -37,15 +52,15 @@ func main() {
 	}
 	log.Println("✅ LedgerPoint is ready")
 
-	// Initialize handlers
+	// Start outbound client processing (after LedgerPoint is ready)
+	log.Println("▶️  Starting eClear outbound client...")
+	go eclearClient.RunProcessing(ctx)
+
+	// Initialize handlers (these don't need event subscription)
 	masterDataHandler := handler.NewMasterDataHandler(ledgerPoint)
 	tradeHandler := handler.NewTradeHandler(ledgerPoint)
 	queryHandler := handler.NewQueryHandler(ledgerPoint)
 	settingsHandler := handler.NewSettingsHandler(ledgerPoint)
-
-	// Initialize outbound client (for sending trades to eClear)
-	outboundClient := handler.NewEClearClient(eclearBaseURL, ledgerPoint)
-	go outboundClient.Start(ctx)
 
 	// Setup HTTP router
 	mux := http.NewServeMux()

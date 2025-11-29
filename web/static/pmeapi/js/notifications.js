@@ -75,26 +75,31 @@ function connectWebSocket() {
             };
             ws.send(JSON.stringify(subscribeMsg));
             console.log('Sent subscribe request for all buffered notifications');
-
-            addSystemNotification('Connected - Loading all buffered notifications', 'success');
         };
 
         ws.onmessage = (event) => {
             try {
-                const message = JSON.parse(event.data);
+                // Server may batch multiple JSON messages separated by newlines
+                const messages = event.data.trim().split('\n');
 
-                // Handle different message types
-                if (message.type === 'recovery_start') {
-                    handleRecoveryStart(message);
-                } else if (message.type === 'recovery_complete') {
-                    handleRecoveryComplete(message);
-                } else if (message.type === 'buffer_info') {
-                    handleBufferInfo(message);
-                } else if (message.seq) {
-                    // Regular sequenced notification
-                    handleSequencedNotification(message);
-                } else {
-                    console.warn('Unknown message type:', message);
+                for (const msgStr of messages) {
+                    if (!msgStr.trim()) continue;
+
+                    const message = JSON.parse(msgStr);
+
+                    // Handle different message types
+                    if (message.type === 'recovery_start') {
+                        handleRecoveryStart(message);
+                    } else if (message.type === 'recovery_complete') {
+                        handleRecoveryComplete(message);
+                    } else if (message.type === 'buffer_info') {
+                        handleBufferInfo(message);
+                    } else if (message.seq) {
+                        // Regular sequenced notification
+                        handleSequencedNotification(message);
+                    } else {
+                        console.warn('Unknown message type:', message);
+                    }
                 }
             } catch (error) {
                 console.error('Error parsing notification:', error);
@@ -112,7 +117,6 @@ function connectWebSocket() {
             ws = null;
 
             if (!event.wasClean) {
-                addSystemNotification(`Connection lost (code: ${event.code}). Reconnecting...`, 'error');
                 scheduleReconnect();
             }
         };
@@ -120,7 +124,6 @@ function connectWebSocket() {
     } catch (error) {
         console.error('Error creating WebSocket:', error);
         updateStatus('🔴 Connection Failed', 'error');
-        addSystemNotification(`Failed to connect: ${error.message}`, 'error');
     }
 }
 
@@ -131,7 +134,6 @@ function disconnectWebSocket() {
         ws = null;
         clearReconnectTimer();
         updateStatus('🔴 Disconnected', 'disconnected');
-        addSystemNotification('WebSocket disconnected', 'info');
     }
 }
 
@@ -169,13 +171,6 @@ function handleRecoveryStart(message) {
     recoveryCount = 0;
     console.log('Recovery started:', message);
     updateStatus('🔄 Recovering...', 'connecting');
-
-    const msg = `Recovery: ${message.count} messages from seq ${message.requested_seq}`;
-    if (!message.all_available) {
-        addSystemNotification(`⚠️  ${msg} (some messages lost, oldest: ${message.oldest_seq})`, 'warning');
-    } else {
-        addSystemNotification(`✅ ${msg}`, 'info');
-    }
 }
 
 // Handle recovery complete message
@@ -183,14 +178,11 @@ function handleRecoveryComplete(message) {
     isRecovering = false;
     console.log('Recovery complete:', message);
     updateStatus('🟢 Connected (Live)', 'connected');
-    addSystemNotification(`Recovery complete: ${recoveryCount} messages recovered`, 'success');
 }
 
 // Handle buffer info message
 function handleBufferInfo(message) {
     console.log('Buffer info:', message);
-    const info = `Buffer: ${message.size}/${message.capacity} messages, seq ${message.oldest_seq}-${message.latest_seq}`;
-    addSystemNotification(info, 'info');
 }
 
 // Handle sequenced notification
@@ -284,15 +276,15 @@ function displayNotification(notification) {
 
     entry.innerHTML = html;
 
-    // Add to container (newest at top)
-    container.insertBefore(entry, container.firstChild);
+    // Add to container (oldest first, newest at bottom - sequential order)
+    container.appendChild(entry);
 
     // Trim notifications if exceeding max
     trimNotifications();
 
-    // Auto-scroll if enabled
+    // Auto-scroll to bottom if enabled (to see newest)
     if (document.getElementById('auto-scroll')?.checked) {
-        entry.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        entry.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
 }
 
@@ -333,7 +325,7 @@ function clearNotifications() {
     notificationCount = 0;
 }
 
-// Trim notifications to max count
+// Trim notifications to max count (remove oldest from top)
 function trimNotifications() {
     const maxEvents = parseInt(document.getElementById('max-events')?.value || 100);
     const container = document.getElementById('notifications-container');
@@ -341,7 +333,9 @@ function trimNotifications() {
 
     const entries = container.querySelectorAll('.notification-entry');
     if (entries.length > maxEvents) {
-        for (let i = maxEvents; i < entries.length; i++) {
+        // Remove oldest entries from the beginning
+        const toRemove = entries.length - maxEvents;
+        for (let i = 0; i < toRemove; i++) {
             entries[i].remove();
         }
     }

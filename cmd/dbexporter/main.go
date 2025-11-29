@@ -45,10 +45,16 @@ func main() {
 
 	// Create LedgerPoint
 	log.Println("[DB-EXPORTER] Initializing LedgerPoint...")
-	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "dbexporter", ctx)
+	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "dbexporter")
 
-	// Register exporter as a sync handler
-	ledgerPoint.Sync <- exp
+	// Collect all subscribers
+	subscribers := []ledger.LedgerPointInterface{
+		exp,
+	}
+
+	// Start LedgerPoint with all subscribers
+	log.Println("[DB-EXPORTER] Starting LedgerPoint with subscribers...")
+	ledgerPoint.Start(subscribers, ctx)
 
 	log.Println("[DB-EXPORTER] Database Exporter Service started successfully")
 	log.Println("[DB-EXPORTER] Listening for Kafka events...")

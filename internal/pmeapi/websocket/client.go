@@ -46,8 +46,11 @@ type Client struct {
 	// Client ID for identification
 	id string
 
-	// Requested sequence number for recovery (0 = no recovery, just send buffer info)
+	// Requested sequence number for recovery (0 = from oldest available in buffer)
 	requestedSeq uint64
+
+	// Flag to track if client has sent subscribe message
+	hasSubscribed bool
 }
 
 // ClientSubscribeMessage represents the initial message from client
@@ -85,6 +88,7 @@ func (c *Client) readPump() {
 		var subMsg ClientSubscribeMessage
 		if err := json.Unmarshal(message, &subMsg); err == nil && subMsg.Type == "subscribe" {
 			c.requestedSeq = subMsg.FromSeq
+			c.hasSubscribed = true
 			log.Printf("[WS-CLIENT] Client %s requesting from seq %d", c.id, c.requestedSeq)
 			// Trigger recovery by re-registering
 			c.hub.register <- c

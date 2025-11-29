@@ -387,7 +387,7 @@ tbody tr:hover .row-tooltip {
     font-size: 11px;
     line-height: 1.4;
     white-space: nowrap;
-    overflow-x: auto;
+    overflow: hidden;
 }
 
 .notification-entry:hover {
@@ -476,6 +476,9 @@ tbody tr:hover .row-tooltip {
     align-items: center;
     gap: 8px;
     flex-wrap: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
 }
 
 .notification-data span {

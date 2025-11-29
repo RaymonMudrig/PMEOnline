@@ -172,11 +172,31 @@ func (e *Exporter) SyncOrderWithdrawNak(a ledger.OrderWithdrawNak) {
 
 // SyncTrade handles Trade events
 func (e *Exporter) SyncTrade(t ledger.Trade) {
+	// Insert trade
 	if err := e.tradeRepo.Insert(t); err != nil {
 		log.Printf("[EXPORTER] Error inserting trade: %v", err)
 		return
 	}
 	log.Printf("[EXPORTER] Trade inserted: NID=%d, Reff=%s, State=%s", t.NID, t.KpeiReff, t.State)
+
+	// Insert borrower contracts
+	for _, contract := range t.Borrower {
+		if err := e.contractRepo.Insert(contract); err != nil {
+			log.Printf("[EXPORTER] Error inserting borrower contract: %v", err)
+		} else {
+			log.Printf("[EXPORTER] Borrower contract inserted: NID=%d, Account=%s", contract.NID, contract.AccountCode)
+		}
+	}
+
+	// Insert lender contracts
+	for _, contract := range t.Lender {
+		if err := e.contractRepo.Insert(contract); err != nil {
+			log.Printf("[EXPORTER] Error inserting lender contract: %v", err)
+		} else {
+			log.Printf("[EXPORTER] Lender contract inserted: NID=%d, Account=%s", contract.NID, contract.AccountCode)
+		}
+	}
+
 	e.logEvent("Trade", t, ledger.GetCurrentTimeMillis())
 }
 

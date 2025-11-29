@@ -57,9 +57,9 @@ func NewDBFromEnv() (*DB, error) {
 	config := Config{
 		Host:     getEnv("DB_HOST", "localhost"),
 		Port:     getEnv("DB_PORT", "5432"),
-		User:     getEnv("DB_USER", "pmeuser"),
-		Password: getEnv("DB_PASSWORD", "pmepass"),
-		DBName:   getEnv("DB_NAME", "pmedb"),
+		User:     getEnv("DB_USER", "raymon"),
+		Password: getEnv("DB_PASSWORD", "tbn"),
+		DBName:   getEnv("DB_NAME", "pmeonline"),
 		SSLMode:  getEnv("DB_SSLMODE", "disable"),
 	}
 

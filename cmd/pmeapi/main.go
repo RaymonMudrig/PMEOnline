@@ -37,17 +37,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialize LedgerPoint
-	log.Println("[APME-API] Initializing LedgerPoint...")
-	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "pmeapi", ctx)
-
-	// Wait for LedgerPoint to be ready
-	log.Println("[APME-API] Waiting for LedgerPoint to be ready...")
-	for !ledgerPoint.IsReady {
-		time.Sleep(100 * time.Millisecond)
-	}
-	log.Println("[APME-API] LedgerPoint is ready")
-
 	// Initialize Snowflake ID generator
 	idGenerator, err := idgen.NewGenerator(instanceID)
 	if err != nil {
@@ -55,13 +44,25 @@ func main() {
 	}
 	log.Printf("[APME-API] Snowflake ID generator initialized (instance: %d)", instanceID)
 
+	// Initialize LedgerPoint
+	log.Println("[APME-API] Initializing LedgerPoint...")
+	ledgerPoint := ledger.CreateLedgerPoint(kafkaURL, kafkaTopic, "pmeapi")
+
 	// Initialize WebSocket hub
 	hub := websocket.NewHub()
 	go hub.Run(ctx)
 
 	// Subscribe to events for notifications
 	notifier := websocket.NewNotifier(hub, ledgerPoint)
-	ledgerPoint.Sync <- notifier
+
+	ledgerPoint.Start([]ledger.LedgerPointInterface{notifier}, ctx)
+
+	// Wait for LedgerPoint to be ready
+	log.Println("[APME-API] Waiting for LedgerPoint to be ready...")
+	for !ledgerPoint.IsReady {
+		time.Sleep(100 * time.Millisecond)
+	}
+	log.Println("[APME-API] LedgerPoint is ready")
 
 	// Initialize handlers
 	orderHandler := handler.NewOrderHandler(ledgerPoint, idGenerator)
