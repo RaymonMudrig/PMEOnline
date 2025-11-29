@@ -55,33 +55,33 @@ func (h *SBLHandler) GetSBLDetail(w http.ResponseWriter, r *http.Request) {
 
 	var orders []SBLOrderInfo
 
-	for _, order := range h.ledger.Orders {
+	h.ledger.ForEachOrder(func(order ledger.OrderEntity) bool {
 		// Only include Open and Partial orders
 		if order.State != "O" && order.State != "P" {
-			continue
+			return true
 		}
 
 		// Apply filters
 		if participantCode != "" && order.ParticipantCode != participantCode {
-			continue
+			return true
 		}
 
 		if instrumentCode != "" && order.InstrumentCode != instrumentCode {
-			continue
+			return true
 		}
 
 		if side != "" && order.Side != side {
-			continue
+			return true
 		}
 
 		if aroFilter == "true" && !order.ARO {
-			continue
+			return true
 		} else if aroFilter == "false" && order.ARO {
-			continue
+			return true
 		}
 
 		// Get account SID
-		account, exists := h.ledger.Account[order.AccountCode]
+		account, exists := h.ledger.GetAccount(order.AccountCode)
 		sid := ""
 		if exists {
 			sid = account.SID
@@ -110,7 +110,8 @@ func (h *SBLHandler) GetSBLDetail(w http.ResponseWriter, r *http.Request) {
 		}
 
 		orders = append(orders, orderInfo)
-	}
+		return true
+	})
 
 	respondSuccess(w, "SBL detail retrieved", map[string]interface{}{
 		"count":  len(orders),
@@ -133,15 +134,15 @@ func (h *SBLHandler) GetSBLAggregate(w http.ResponseWriter, r *http.Request) {
 
 	aggMap := make(map[string]*AggData)
 
-	for _, order := range h.ledger.Orders {
+	h.ledger.ForEachOrder(func(order ledger.OrderEntity) bool {
 		// Only include Open and Partial orders
 		if order.State != "O" && order.State != "P" {
-			continue
+			return true
 		}
 
 		// Apply instrument filter
 		if instrumentFilter != "" && order.InstrumentCode != instrumentFilter {
-			continue
+			return true
 		}
 
 		// Initialize if not exists
@@ -157,7 +158,8 @@ func (h *SBLHandler) GetSBLAggregate(w http.ResponseWriter, r *http.Request) {
 		} else if order.Side == "LEND" {
 			aggMap[order.InstrumentCode].LendQty += remainingQty
 		}
-	}
+		return true
+	})
 
 	// Build result
 	var aggregates []SBLAggregateInfo
@@ -165,7 +167,7 @@ func (h *SBLHandler) GetSBLAggregate(w http.ResponseWriter, r *http.Request) {
 	for instrCode, data := range aggMap {
 		// Get instrument name
 		instrName := instrCode
-		if instrument, exists := h.ledger.Instrument[instrCode]; exists {
+		if instrument, exists := h.ledger.GetInstrument(instrCode); exists {
 			instrName = instrument.Name
 		}
 

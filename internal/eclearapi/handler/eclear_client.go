@@ -30,18 +30,18 @@ func NewEClearClient(baseURL string, l *ledger.LedgerPoint) *EClearClient {
 
 // TradeMatchedPayload represents the payload sent to eClear for trade approval
 type TradeMatchedPayload struct {
-	PmeTradeReff   string             `json:"pme_trade_reff"`
-	InstrumentCode string             `json:"instrument_code"`
-	Quantity       float64            `json:"quantity"`
-	Periode        int                `json:"periode"`
-	AroStatus      bool               `json:"aro_status"`
-	FeeFlatRate    float64            `json:"fee_flat_rate"`
-	FeeBorrRate    float64            `json:"fee_borr_rate"`
-	FeeLendRate    float64            `json:"fee_lend_rate"`
-	MatchedAt      string             `json:"matched_at"`
-	ReimburseAt    string             `json:"reimburse_at"`
-	Lender         ContractInfo       `json:"lender"`
-	Borrower       ContractInfo       `json:"borrower"`
+	PmeTradeReff   string       `json:"pme_trade_reff"`
+	InstrumentCode string       `json:"instrument_code"`
+	Quantity       float64      `json:"quantity"`
+	Periode        int          `json:"periode"`
+	AroStatus      bool         `json:"aro_status"`
+	FeeFlatRate    float64      `json:"fee_flat_rate"`
+	FeeBorrRate    float64      `json:"fee_borr_rate"`
+	FeeLendRate    float64      `json:"fee_lend_rate"`
+	MatchedAt      string       `json:"matched_at"`
+	ReimburseAt    string       `json:"reimburse_at"`
+	Lender         ContractInfo `json:"lender"`
+	Borrower       ContractInfo `json:"borrower"`
 }
 
 type ContractInfo struct {
@@ -74,25 +74,28 @@ type EClearSyncHandler struct {
 	client *EClearClient
 }
 
-func (h *EClearSyncHandler) SyncServiceStart(a ledger.ServiceStart)       {}
-func (h *EClearSyncHandler) SyncParameter(a ledger.Parameter)             {}
-func (h *EClearSyncHandler) SyncSessionTime(a ledger.SessionTime)         {}
-func (h *EClearSyncHandler) SyncHoliday(a ledger.Holiday)                 {}
-func (h *EClearSyncHandler) SyncAccount(a ledger.Account)                 {}
-func (h *EClearSyncHandler) SyncAccountLimit(a ledger.AccountLimit)       {}
-func (h *EClearSyncHandler) SyncParticipant(a ledger.Participant)         {}
-func (h *EClearSyncHandler) SyncInstrument(a ledger.Instrument)           {}
-func (h *EClearSyncHandler) SyncOrder(a ledger.Order)                     {}
-func (h *EClearSyncHandler) SyncOrderAck(a ledger.OrderAck)               {}
-func (h *EClearSyncHandler) SyncOrderNak(a ledger.OrderNak)               {}
-func (h *EClearSyncHandler) SyncOrderWithdraw(a ledger.OrderWithdraw)     {}
+func (h *EClearSyncHandler) SyncServiceStart(a ledger.ServiceStart)         {}
+func (h *EClearSyncHandler) SyncParameter(a ledger.Parameter)               {}
+func (h *EClearSyncHandler) SyncSessionTime(a ledger.SessionTime)           {}
+func (h *EClearSyncHandler) SyncHoliday(a ledger.Holiday)                   {}
+func (h *EClearSyncHandler) SyncAccount(a ledger.Account)                   {}
+func (h *EClearSyncHandler) SyncAccountLimit(a ledger.AccountLimit)         {}
+func (h *EClearSyncHandler) SyncParticipant(a ledger.Participant)           {}
+func (h *EClearSyncHandler) SyncInstrument(a ledger.Instrument)             {}
+func (h *EClearSyncHandler) SyncOrder(a ledger.Order)                       {}
+func (h *EClearSyncHandler) SyncOrderAck(a ledger.OrderAck)                 {}
+func (h *EClearSyncHandler) SyncOrderNak(a ledger.OrderNak)                 {}
+func (h *EClearSyncHandler) SyncOrderPending(a ledger.OrderPending)         {}
+func (h *EClearSyncHandler) SyncOrderWithdraw(a ledger.OrderWithdraw)       {}
 func (h *EClearSyncHandler) SyncOrderWithdrawAck(a ledger.OrderWithdrawAck) {}
 func (h *EClearSyncHandler) SyncOrderWithdrawNak(a ledger.OrderWithdrawNak) {}
-func (h *EClearSyncHandler) SyncTradeWait(a ledger.TradeWait)             {}
-func (h *EClearSyncHandler) SyncTradeAck(a ledger.TradeAck)               {}
-func (h *EClearSyncHandler) SyncTradeNak(a ledger.TradeNak)               {}
-func (h *EClearSyncHandler) SyncTradeReimburse(a ledger.TradeReimburse)   {}
-func (h *EClearSyncHandler) SyncContract(a ledger.Contract)               {}
+func (h *EClearSyncHandler) SyncTradeWait(a ledger.TradeWait)               {}
+func (h *EClearSyncHandler) SyncTradeAck(a ledger.TradeAck)                 {}
+func (h *EClearSyncHandler) SyncTradeNak(a ledger.TradeNak)                 {}
+func (h *EClearSyncHandler) SyncTradeReimburse(a ledger.TradeReimburse)     {}
+func (h *EClearSyncHandler) SyncContract(a ledger.Contract)                 {}
+func (h *EClearSyncHandler) SyncSod(a ledger.Sod)                           {}
+func (h *EClearSyncHandler) SyncEod(a ledger.Eod)                           {}
 
 // SyncTrade is called when a new trade is created
 func (h *EClearSyncHandler) SyncTrade(a ledger.Trade) {
@@ -136,19 +139,19 @@ func (c *EClearClient) SendTrade(trade ledger.Trade) error {
 	}
 
 	// Get account information for SID
-	borrowerAccount, exists := c.ledger.Account[borrowerContract.AccountCode]
+	borrowerAccount, exists := c.ledger.GetAccount(borrowerContract.AccountCode)
 	if !exists {
 		return fmt.Errorf("borrower account not found: %s", borrowerContract.AccountCode)
 	}
 
-	lenderAccount, exists := c.ledger.Account[lenderContract.AccountCode]
+	lenderAccount, exists := c.ledger.GetAccount(lenderContract.AccountCode)
 	if !exists {
 		return fmt.Errorf("lender account not found: %s", lenderContract.AccountCode)
 	}
 
 	// Determine ARO status from any of the orders
 	aroStatus := false
-	if borrowerOrder, exists := c.ledger.Orders[borrowerContract.OrderNID]; exists {
+	if borrowerOrder, exists := c.ledger.GetOrder(borrowerContract.OrderNID); exists {
 		aroStatus = borrowerOrder.ARO
 	}
 
@@ -224,7 +227,7 @@ func (c *EClearClient) SendTrade(trade ledger.Trade) error {
 func (c *EClearClient) CheckPendingTrades() {
 	log.Println("🔍 Checking for pending trades at EOD...")
 
-	for nid, trade := range c.ledger.Trades {
+	c.ledger.ForEachTrade(func(trade ledger.TradeEntity) bool {
 		// Check if trade is in Wait state (E = Approval/Wait)
 		if trade.State == "E" {
 			// Check if matched today (simplified - should check against session time)
@@ -233,12 +236,13 @@ func (c *EClearClient) CheckPendingTrades() {
 
 				// Commit TradeNak to drop the trade
 				c.ledger.Commit <- ledger.TradeNak{
-					TradeNID: nid,
+					TradeNID: trade.NID,
 					Message:  "Trade not approved by eClear by EOD",
 				}
 			}
 		}
-	}
+		return true // Continue iteration
+	})
 
 	log.Println("✅ Pending trades check completed")
 }

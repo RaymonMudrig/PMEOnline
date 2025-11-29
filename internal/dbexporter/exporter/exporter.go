@@ -142,6 +142,12 @@ func (e *Exporter) SyncOrderNak(a ledger.OrderNak) {
 	e.logEvent("OrderNak", a, ledger.GetCurrentTimeMillis())
 }
 
+// SyncOrderPending handles OrderPending events
+func (e *Exporter) SyncOrderPending(w ledger.OrderPending) {
+	log.Printf("[EXPORTER] Order pending: NID=%d", w.OrderNID)
+	e.logEvent("OrderPending", w, ledger.GetCurrentTimeMillis())
+}
+
 // SyncOrderWithdraw handles OrderWithdraw events
 func (e *Exporter) SyncOrderWithdraw(w ledger.OrderWithdraw) {
 	log.Printf("[EXPORTER] Order withdraw request: NID=%d", w.OrderNID)
@@ -222,6 +228,19 @@ func (e *Exporter) SyncContract(c ledger.Contract) {
 	}
 	log.Printf("[EXPORTER] Contract inserted: NID=%d, Side=%s, State=%s", c.NID, c.Side, c.State)
 	e.logEvent("Contract", c, ledger.GetCurrentTimeMillis())
+}
+
+func (e *Exporter) SyncSod(s ledger.Sod) {
+	log.Printf("[EXPORTER] 🌅 Start of Day: %s", s.Date.Format("2006-01-02"))
+	// TODO: Store SOD event in database for audit trail
+	e.logEvent("SOD", s, ledger.GetCurrentTimeMillis())
+}
+
+func (e *Exporter) SyncEod(eod ledger.Eod) {
+	log.Printf("[EXPORTER] 🌆 End of Day: %s", eod.Date.Format("2006-01-02"))
+	// TODO: Store EOD event in database for audit trail
+	// TODO: Generate and store daily reports
+	e.logEvent("EOD", eod, ledger.GetCurrentTimeMillis())
 }
 
 // Helper function to log events

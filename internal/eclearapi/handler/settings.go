@@ -18,7 +18,7 @@ func NewSettingsHandler(l *ledger.LedgerPoint) *SettingsHandler {
 
 // GetParameter handles GET /parameter
 func (h *SettingsHandler) GetParameter(w http.ResponseWriter, r *http.Request) {
-	param := h.ledger.Parameter
+	param := h.ledger.GetParameter()
 
 	respondSuccess(w, "Parameter retrieved", map[string]interface{}{
 		"parameter": map[string]interface{}{
@@ -98,14 +98,15 @@ func (h *SettingsHandler) UpdateParameter(w http.ResponseWriter, r *http.Request
 func (h *SettingsHandler) GetHolidays(w http.ResponseWriter, r *http.Request) {
 	holidays := make([]map[string]interface{}, 0)
 
-	for _, hol := range h.ledger.Holiday {
+	h.ledger.ForEachHoliday(func(hol ledger.HolidayEntity) bool {
 		holidays = append(holidays, map[string]interface{}{
 			"nid":         hol.NID,
 			"tahun":       hol.Tahun,
 			"date":        hol.Date.Format("2006-01-02"),
 			"description": hol.Description,
 		})
-	}
+		return true
+	})
 
 	respondSuccess(w, "Holidays retrieved", map[string]interface{}{
 		"count":    len(holidays),
@@ -155,7 +156,7 @@ func (h *SettingsHandler) AddHoliday(w http.ResponseWriter, r *http.Request) {
 
 // GetSessionTime handles GET /sessiontime
 func (h *SettingsHandler) GetSessionTime(w http.ResponseWriter, r *http.Request) {
-	st := h.ledger.SessionTime
+	st := h.ledger.GetSessionTime()
 
 	respondSuccess(w, "Session time retrieved", map[string]interface{}{
 		"sessiontime": map[string]interface{}{

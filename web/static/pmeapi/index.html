@@ -20,6 +20,7 @@
             <button class="tab" onclick="showTab('contracts')">📜 Contract List</button>
             <button class="tab" onclick="showTab('sbl-detail')">📊 SBL Detail</button>
             <button class="tab" onclick="showTab('sbl-aggregate')">📈 SBL Aggregate</button>
+            <button class="tab" onclick="showTab('notifications')">🔔 Notifications</button>
         </div>
 
         <!-- Entry Borrow Tab -->
@@ -208,8 +209,39 @@
             <div id="sbl-aggregate-status" class="status" style="display:none;"></div>
             <div id="sbl-aggregate-table"></div>
         </div>
+
+        <!-- Notifications Tab -->
+        <div id="notifications" class="tab-content">
+            <h2>Real-Time Event Notifications</h2>
+            <div class="controls">
+                <div class="ws-status">
+                    <span>WebSocket:</span>
+                    <span id="ws-status" class="status-indicator">🔴 Disconnected</span>
+                </div>
+                <button class="btn btn-primary" onclick="connectWebSocket()">🔌 Connect</button>
+                <button class="btn btn-secondary" onclick="disconnectWebSocket()">⛔ Disconnect</button>
+                <button class="btn btn-secondary" onclick="clearNotifications()">🗑️ Clear</button>
+                <label style="margin-left: 20px;">
+                    <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+                </label>
+                <label style="margin-left: 10px;">
+                    Max events:
+                    <select id="max-events" onchange="trimNotifications()">
+                        <option value="50">50</option>
+                        <option value="100" selected>100</option>
+                        <option value="200">200</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                    </select>
+                </label>
+            </div>
+            <div id="notifications-container" class="notifications-container">
+                <p class="no-notifications">No notifications yet. Click "Connect" to start receiving events.</p>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/app.js"></script>
+    <script src="/static/js/notifications.js"></script>
 </body>
 </html>

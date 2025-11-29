@@ -7,15 +7,20 @@ import (
 	"net/http"
 	"time"
 
+	"pmeonline/pkg/idgen"
 	"pmeonline/pkg/ledger"
 )
 
 type OrderHandler struct {
 	ledger *ledger.LedgerPoint
+	idgen  *idgen.Generator
 }
 
-func NewOrderHandler(l *ledger.LedgerPoint) *OrderHandler {
-	return &OrderHandler{ledger: l}
+func NewOrderHandler(l *ledger.LedgerPoint, idGenerator *idgen.Generator) *OrderHandler {
+	return &OrderHandler{
+		ledger: l,
+		idgen:  idGenerator,
+	}
 }
 
 // OrderRequest represents a new order request
@@ -84,26 +89,32 @@ func (h *OrderHandler) NewOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get account and participant NIDs
-	account, accountExists := h.ledger.Account[req.AccountCode]
+	account, accountExists := h.ledger.GetAccount(req.AccountCode)
 	if !accountExists {
 		respondError(w, http.StatusNotFound, "Account not found")
 		return
 	}
 
-	participant, participantExists := h.ledger.Participant[req.ParticipantCode]
+	participant, participantExists := h.ledger.GetParticipant(req.ParticipantCode)
 	if !participantExists {
 		respondError(w, http.StatusNotFound, "Participant not found")
 		return
 	}
 
-	instrument, instrumentExists := h.ledger.Instrument[req.InstrumentCode]
+	instrument, instrumentExists := h.ledger.GetInstrument(req.InstrumentCode)
 	if !instrumentExists {
 		respondError(w, http.StatusNotFound, "Instrument not found")
 		return
 	}
 
-	// Generate order NID
-	orderNID := int(ledger.GetCurrentTimeMillis())
+	// Generate unique order NID using Snowflake ID
+	nid, err := h.idgen.NextID()
+	if err != nil {
+		log.Printf("[APME-API] Failed to generate order NID: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to generate order ID")
+		return
+	}
+	orderNID := int(nid)
 
 	// Create order event
 	order := ledger.Order{
@@ -157,7 +168,7 @@ func (h *OrderHandler) AmendOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate order exists
-	originalOrder, exists := h.ledger.Orders[req.OrderNID]
+	originalOrder, exists := h.ledger.GetOrder(req.OrderNID)
 	if !exists {
 		respondError(w, http.StatusNotFound, "Order not found")
 		return
@@ -169,8 +180,14 @@ func (h *OrderHandler) AmendOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create amended order (new order with PrevNID reference)
-	newOrderNID := int(ledger.GetCurrentTimeMillis())
+	// Generate unique order NID using Snowflake ID
+	nid, err := h.idgen.NextID()
+	if err != nil {
+		log.Printf("[APME-API] Failed to generate amended order NID: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to generate order ID")
+		return
+	}
+	newOrderNID := int(nid)
 
 	amendedOrder := ledger.Order{
 		NID:               newOrderNID,
@@ -238,7 +255,7 @@ func (h *OrderHandler) WithdrawOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate order exists
-	order, exists := h.ledger.Orders[req.OrderNID]
+	order, exists := h.ledger.GetOrder(req.OrderNID)
 	if !exists {
 		respondError(w, http.StatusNotFound, "Order not found")
 		return

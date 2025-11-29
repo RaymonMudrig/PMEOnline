@@ -18,15 +18,16 @@ func NewQueryHandler(l *ledger.LedgerPoint) *QueryHandler {
 // GetParticipants handles GET /participant/list
 func (h *QueryHandler) GetParticipants(w http.ResponseWriter, r *http.Request) {
 	participants := make([]map[string]interface{}, 0)
-	
-	for _, p := range h.ledger.Participant {
+
+	h.ledger.ForEachParticipant(func(p ledger.ParticipantEntity) bool {
 		participants = append(participants, map[string]interface{}{
 			"code":             p.Code,
 			"name":             p.Name,
 			"borr_eligibility": p.BorrEligibility,
 			"lend_eligibility": p.LendEligibility,
 		})
-	}
+		return true
+	})
 
 	respondSuccess(w, "Participants retrieved", map[string]interface{}{
 		"count":        len(participants),
@@ -37,15 +38,16 @@ func (h *QueryHandler) GetParticipants(w http.ResponseWriter, r *http.Request) {
 // GetInstruments handles GET /instrument/list
 func (h *QueryHandler) GetInstruments(w http.ResponseWriter, r *http.Request) {
 	instruments := make([]map[string]interface{}, 0)
-	
-	for _, i := range h.ledger.Instrument {
+
+	h.ledger.ForEachInstrument(func(i ledger.InstrumentEntity) bool {
 		instruments = append(instruments, map[string]interface{}{
 			"code":   i.Code,
 			"name":   i.Name,
 			"type":   i.Type,
 			"status": i.Status,
 		})
-	}
+		return true
+	})
 
 	respondSuccess(w, "Instruments retrieved", map[string]interface{}{
 		"count":       len(instruments),
@@ -56,18 +58,18 @@ func (h *QueryHandler) GetInstruments(w http.ResponseWriter, r *http.Request) {
 // GetAccounts handles GET /account/list
 func (h *QueryHandler) GetAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts := make([]map[string]interface{}, 0)
-	
-	for _, a := range h.ledger.Account {
+
+	h.ledger.ForEachAccount(func(a ledger.AccountEntity) bool {
 		accounts = append(accounts, map[string]interface{}{
 			"code":             a.Code,
 			"sid":              a.SID,
 			"name":             a.Name,
-			"address":          a.Address,
 			"participant_code": a.ParticipantCode,
 			"trade_limit":      a.TradeLimit,
 			"pool_limit":       a.PoolLimit,
 		})
-	}
+		return true
+	})
 
 	respondSuccess(w, "Accounts retrieved", map[string]interface{}{
 		"count":    len(accounts),

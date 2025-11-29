@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -44,6 +45,15 @@ type Client struct {
 
 	// Client ID for identification
 	id string
+
+	// Requested sequence number for recovery (0 = no recovery, just send buffer info)
+	requestedSeq uint64
+}
+
+// ClientSubscribeMessage represents the initial message from client
+type ClientSubscribeMessage struct {
+	Type     string `json:"type"`      // "subscribe"
+	FromSeq  uint64 `json:"from_seq"`  // Sequence number to start from (0 = from beginning)
 }
 
 // readPump pumps messages from the websocket connection to the hub
@@ -70,8 +80,15 @@ func (c *Client) readPump() {
 		}
 
 		log.Printf("[WS-CLIENT] Received message from %s: %s", c.id, message)
-		// For now, we don't process incoming messages from clients
-		// This is primarily a notification channel
+
+		// Parse subscribe message to get requested sequence
+		var subMsg ClientSubscribeMessage
+		if err := json.Unmarshal(message, &subMsg); err == nil && subMsg.Type == "subscribe" {
+			c.requestedSeq = subMsg.FromSeq
+			log.Printf("[WS-CLIENT] Client %s requesting from seq %d", c.id, c.requestedSeq)
+			// Trigger recovery by re-registering
+			c.hub.register <- c
+		}
 	}
 }
 

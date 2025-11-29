@@ -56,7 +56,6 @@ type AccountEntity struct {
 	Code            string    `json:"code"` // "YU-012345"-01/02/04/05
 	SID             string    `json:"sid"`
 	Name            string    `json:"name"`
-	Address         string    `json:"address"`
 	ParticipantNID  int       `json:"participant_nid"`
 	ParticipantCode string    `json:"participant_code"`
 	TradeLimit      float64   `json:"trade_limit"`
@@ -108,8 +107,8 @@ type TradeEntity struct {
 	MatchedAt      time.Time `json:"matched_at"`
 	SettledAt      time.Time `json:"settled_at"`
 	ReimburseAt    time.Time `json:"reimburse_at"`
-	Lender         map[int]ContractEntity
-	Borrower       map[int]ContractEntity
+	Lender         []int     `json:"lender"`
+	Borrower       []int     `json:"borrower"`
 }
 
 type ContractEntity struct {

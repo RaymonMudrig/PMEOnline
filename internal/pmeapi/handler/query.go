@@ -19,7 +19,6 @@ type AccountInfoResponse struct {
 	Code            string  `json:"code"`
 	SID             string  `json:"sid"`
 	Name            string  `json:"name"`
-	Address         string  `json:"address"`
 	ParticipantCode string  `json:"participant_code"`
 	ParticipantName string  `json:"participant_name"`
 	TradeLimit      float64 `json:"trade_limit"`
@@ -78,12 +77,13 @@ func (h *QueryHandler) GetAccountInfo(w http.ResponseWriter, r *http.Request) {
 
 	// Find account by SID
 	var foundAccount *ledger.AccountEntity
-	for _, account := range h.ledger.Account {
+	h.ledger.ForEachAccount(func(account ledger.AccountEntity) bool {
 		if account.SID == sid {
 			foundAccount = &account
-			break
+			return false // Stop iteration
 		}
-	}
+		return true // Continue iteration
+	})
 
 	if foundAccount == nil {
 		respondError(w, http.StatusNotFound, "Account not found")
@@ -91,7 +91,7 @@ func (h *QueryHandler) GetAccountInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get participant information
-	participant, exists := h.ledger.Participant[foundAccount.ParticipantCode]
+	participant, exists := h.ledger.GetParticipant(foundAccount.ParticipantCode)
 	if !exists {
 		respondError(w, http.StatusInternalServerError, "Participant not found")
 		return
@@ -102,7 +102,6 @@ func (h *QueryHandler) GetAccountInfo(w http.ResponseWriter, r *http.Request) {
 		Code:            foundAccount.Code,
 		SID:             foundAccount.SID,
 		Name:            foundAccount.Name,
-		Address:         foundAccount.Address,
 		ParticipantCode: foundAccount.ParticipantCode,
 		ParticipantName: participant.Name,
 		TradeLimit:      foundAccount.TradeLimit,
@@ -121,22 +120,22 @@ func (h *QueryHandler) GetOrderList(w http.ResponseWriter, r *http.Request) {
 	// Build filter criteria
 	var orders []OrderInfo
 
-	for _, order := range h.ledger.Orders {
+	h.ledger.ForEachOrder(func(order ledger.OrderEntity) bool {
 		// Apply filters
 		if participantCode != "" && order.ParticipantCode != participantCode {
-			continue
+			return true
 		}
 
 		if sid != "" {
 			// Find account by SID
-			account, exists := h.ledger.Account[order.AccountCode]
+			account, exists := h.ledger.GetAccount(order.AccountCode)
 			if !exists || account.SID != sid {
-				continue
+				return true
 			}
 		}
 
 		if stateFilter != "" && order.State != stateFilter {
-			continue
+			return true
 		}
 
 		// Add to results
@@ -160,7 +159,8 @@ func (h *QueryHandler) GetOrderList(w http.ResponseWriter, r *http.Request) {
 			EntryAt:           order.EntryAt.Format("2006-01-02 15:04:05"),
 		}
 		orders = append(orders, orderInfo)
-	}
+		return true
+	})
 
 	respondSuccess(w, "Order list retrieved", map[string]interface{}{
 		"count":  len(orders),
@@ -177,22 +177,22 @@ func (h *QueryHandler) GetContractList(w http.ResponseWriter, r *http.Request) {
 	// Build filter criteria
 	var contracts []ContractInfo
 
-	for _, contract := range h.ledger.Contracts {
+	h.ledger.ForEachContract(func(contract ledger.ContractEntity) bool {
 		// Apply filters
 		if participantCode != "" && contract.AccountParticipantCode != participantCode {
-			continue
+			return true
 		}
 
 		if sid != "" {
 			// Find account by SID
-			account, exists := h.ledger.Account[contract.AccountCode]
+			account, exists := h.ledger.GetAccount(contract.AccountCode)
 			if !exists || account.SID != sid {
-				continue
+				return true
 			}
 		}
 
 		if stateFilter != "" && contract.State != stateFilter {
-			continue
+			return true
 		}
 
 		// Add to results
@@ -216,7 +216,8 @@ func (h *QueryHandler) GetContractList(w http.ResponseWriter, r *http.Request) {
 			ReimburseAt:            contract.ReimburseAt.Format("2006-01-02"),
 		}
 		contracts = append(contracts, contractInfo)
-	}
+		return true
+	})
 
 	respondSuccess(w, "Contract list retrieved", map[string]interface{}{
 		"count":     len(contracts),

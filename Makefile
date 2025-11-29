@@ -19,6 +19,11 @@ help:
 	@echo "  make test-pmeapi     - Test APME API with sample requests"
 	@echo "  make test            - Run all tests"
 	@echo ""
+	@echo "Reset & Cleanup:"
+	@echo "  make reset-kafka     - Truncate Kafka topic (delete all messages)"
+	@echo "  make reset-db        - Reset PostgreSQL database"
+	@echo "  make reset-all       - Reset both Kafka and database"
+	@echo ""
 	@echo "Build:"
 	@echo "  make build           - Build all services"
 	@echo "  make clean           - Clean build artifacts"
@@ -38,7 +43,12 @@ docker-down:
 
 kafka-topic:
 	@echo "📊 Creating Kafka topic..."
-	docker exec pme-kafka kafka-topics.sh \
+	@KAFKA_CONTAINER=$$(docker ps --format "{{.Names}}" | grep -i kafka | head -n 1); \
+	if [ -z "$$KAFKA_CONTAINER" ]; then \
+		echo "❌ No Kafka container is running"; \
+		exit 1; \
+	fi; \
+	docker exec $$KAFKA_CONTAINER kafka-topics.sh \
 		--create \
 		--topic pme-ledger \
 		--bootstrap-server localhost:9092 \
@@ -97,6 +107,29 @@ clean:
 	@echo "🧹 Cleaning build artifacts..."
 	@rm -rf bin/
 	@echo "✅ Clean complete"
+
+# Reset and cleanup
+reset-kafka:
+	@echo "🔄 Resetting Kafka topic..."
+	@./scripts/reset-kafka.sh
+
+reset-db:
+	@echo "🔄 Resetting PostgreSQL database..."
+	@POSTGRES_CONTAINER=$$(docker ps --format "{{.Names}}" | grep -i postgres | head -n 1); \
+	if [ -z "$$POSTGRES_CONTAINER" ]; then \
+		echo "❌ No PostgreSQL container is running"; \
+		exit 1; \
+	fi; \
+	echo "📦 Found PostgreSQL container: $$POSTGRES_CONTAINER"; \
+	docker exec $$POSTGRES_CONTAINER psql -U pmeuser -d pmedb -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	@echo "✅ Database reset complete"
+
+reset-all: reset-kafka reset-db
+	@echo "✅ Full system reset complete!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Restart all services"
+	@echo "  2. Load master data: make test-eclearapi"
 
 # Development workflow
 setup: docker-up kafka-topic

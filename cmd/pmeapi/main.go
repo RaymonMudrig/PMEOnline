@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"pmeonline/internal/pmeapi/handler"
 	"pmeonline/internal/pmeapi/middleware"
 	"pmeonline/internal/pmeapi/websocket"
+	"pmeonline/pkg/idgen"
 	"pmeonline/pkg/ledger"
 )
 
@@ -22,6 +24,14 @@ func main() {
 	kafkaURL := getEnv("KAFKA_URL", "localhost:9092")
 	kafkaTopic := getEnv("KAFKA_TOPIC", "pme-ledger")
 	apiPort := getEnv("API_PORT", "8080")
+	instanceIDStr := getEnv("INSTANCE_ID", "0")
+
+	// Parse instance ID
+	instanceID, err := strconv.ParseInt(instanceIDStr, 10, 64)
+	if err != nil || instanceID < 0 || instanceID > 1023 {
+		log.Fatalf("[APME-API] Invalid INSTANCE_ID: must be 0-1023, got '%s'", instanceIDStr)
+	}
+	log.Printf("[APME-API] Instance ID: %d", instanceID)
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,6 +48,13 @@ func main() {
 	}
 	log.Println("[APME-API] LedgerPoint is ready")
 
+	// Initialize Snowflake ID generator
+	idGenerator, err := idgen.NewGenerator(instanceID)
+	if err != nil {
+		log.Fatalf("[APME-API] Failed to create ID generator: %v", err)
+	}
+	log.Printf("[APME-API] Snowflake ID generator initialized (instance: %d)", instanceID)
+
 	// Initialize WebSocket hub
 	hub := websocket.NewHub()
 	go hub.Run(ctx)
@@ -47,7 +64,7 @@ func main() {
 	ledgerPoint.Sync <- notifier
 
 	// Initialize handlers
-	orderHandler := handler.NewOrderHandler(ledgerPoint)
+	orderHandler := handler.NewOrderHandler(ledgerPoint, idGenerator)
 	queryHandler := handler.NewQueryHandler(ledgerPoint)
 	sblHandler := handler.NewSBLHandler(ledgerPoint)
 

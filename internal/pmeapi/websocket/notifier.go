@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"encoding/json"
 	"log"
 
 	"pmeonline/pkg/ledger"
@@ -21,29 +20,15 @@ func NewNotifier(hub *Hub, l *ledger.LedgerPoint) *Notifier {
 	}
 }
 
-// Notification represents a WebSocket notification message
-type Notification struct {
-	Type      string      `json:"type"`
-	Timestamp int64       `json:"timestamp"`
-	Data      interface{} `json:"data"`
-}
-
 // Send a notification to all connected clients
-func (n *Notifier) sendNotification(notifType string, data interface{}) {
-	notif := Notification{
-		Type:      notifType,
-		Timestamp: ledger.GetCurrentTimeMillis(),
-		Data:      data,
-	}
+func (n *Notifier) sendNotification(notifType string, data map[string]interface{}) {
+	// Add timestamp to data
+	data["timestamp"] = ledger.GetCurrentTimeMillis()
 
-	jsonData, err := json.Marshal(notif)
-	if err != nil {
-		log.Printf("[NOTIFIER] Failed to marshal notification: %v", err)
-		return
-	}
+	// Broadcast using sequenced notification
+	seq := n.hub.BroadcastNotification(notifType, data)
 
-	n.hub.Broadcast(jsonData)
-	log.Printf("[NOTIFIER] Sent %s notification to %d clients", notifType, n.hub.ClientCount())
+	log.Printf("[NOTIFIER] Sent %s notification (seq: %d) to %d clients", notifType, seq, n.hub.ClientCount())
 }
 
 // Implement LedgerPointInterface methods
@@ -96,17 +81,18 @@ func (n *Notifier) SyncInstrument(a ledger.Instrument) {
 
 func (n *Notifier) SyncOrder(a ledger.Order) {
 	n.sendNotification("order_created", map[string]interface{}{
-		"order_nid":      a.NID,
-		"account_code":   a.AccountCode,
-		"instrument":     a.InstrumentCode,
-		"side":           a.Side,
-		"quantity":       a.Quantity,
+		"order_nid":       a.NID,
+		"account_code":    a.AccountCode,
+		"instrument":      a.InstrumentCode,
+		"side":            a.Side,
+		"quantity":        a.Quantity,
 		"reff_request_id": a.ReffRequestID,
+		"state":           "S",
 	})
 }
 
 func (n *Notifier) SyncOrderAck(a ledger.OrderAck) {
-	order, exists := n.ledger.Orders[a.OrderNID]
+	order, exists := n.ledger.GetOrder(a.OrderNID)
 	if !exists {
 		return
 	}
@@ -114,12 +100,12 @@ func (n *Notifier) SyncOrderAck(a ledger.OrderAck) {
 	n.sendNotification("order_acknowledged", map[string]interface{}{
 		"order_nid":    a.OrderNID,
 		"account_code": order.AccountCode,
-		"state":        "acknowledged",
+		"state":        "O",
 	})
 }
 
 func (n *Notifier) SyncOrderNak(a ledger.OrderNak) {
-	order, exists := n.ledger.Orders[a.OrderNID]
+	order, exists := n.ledger.GetOrder(a.OrderNID)
 	if !exists {
 		return
 	}
@@ -127,7 +113,21 @@ func (n *Notifier) SyncOrderNak(a ledger.OrderNak) {
 	n.sendNotification("order_rejected", map[string]interface{}{
 		"order_nid":    a.OrderNID,
 		"account_code": order.AccountCode,
+		"state":        "R",
 		"message":      a.Message,
+	})
+}
+
+func (n *Notifier) SyncOrderPending(a ledger.OrderPending) {
+	order, exists := n.ledger.GetOrder(a.OrderNID)
+	if !exists {
+		return
+	}
+
+	n.sendNotification("order_pending", map[string]interface{}{
+		"order_nid":    a.OrderNID,
+		"account_code": order.AccountCode,
+		"state":        "G",
 	})
 }
 
@@ -136,7 +136,7 @@ func (n *Notifier) SyncOrderWithdraw(a ledger.OrderWithdraw) {
 }
 
 func (n *Notifier) SyncOrderWithdrawAck(a ledger.OrderWithdrawAck) {
-	order, exists := n.ledger.Orders[a.OrderNID]
+	order, exists := n.ledger.GetOrder(a.OrderNID)
 	if !exists {
 		return
 	}
@@ -144,12 +144,12 @@ func (n *Notifier) SyncOrderWithdrawAck(a ledger.OrderWithdrawAck) {
 	n.sendNotification("order_withdrawn", map[string]interface{}{
 		"order_nid":    a.OrderNID,
 		"account_code": order.AccountCode,
-		"state":        "withdrawn",
+		"state":        "W",
 	})
 }
 
 func (n *Notifier) SyncOrderWithdrawNak(a ledger.OrderWithdrawNak) {
-	order, exists := n.ledger.Orders[a.OrderNID]
+	order, exists := n.ledger.GetOrder(a.OrderNID)
 	if !exists {
 		return
 	}
@@ -176,18 +176,18 @@ func (n *Notifier) SyncTrade(a ledger.Trade) {
 	}
 
 	n.sendNotification("trade_matched", map[string]interface{}{
-		"trade_nid":         a.NID,
-		"kpei_reff":         a.KpeiReff,
-		"instrument":        a.InstrumentCode,
-		"quantity":          a.Quantity,
-		"borrower_account":  borrowerAccount,
-		"lender_account":    lenderAccount,
-		"matched_at":        a.MatchedAt,
+		"trade_nid":        a.NID,
+		"kpei_reff":        a.KpeiReff,
+		"instrument":       a.InstrumentCode,
+		"quantity":         a.Quantity,
+		"borrower_account": borrowerAccount,
+		"lender_account":   lenderAccount,
+		"matched_at":       a.MatchedAt,
 	})
 }
 
 func (n *Notifier) SyncTradeWait(a ledger.TradeWait) {
-	trade, exists := n.ledger.Trades[a.TradeNID]
+	trade, exists := n.ledger.GetTrade(a.TradeNID)
 	if !exists {
 		return
 	}
@@ -200,7 +200,7 @@ func (n *Notifier) SyncTradeWait(a ledger.TradeWait) {
 }
 
 func (n *Notifier) SyncTradeAck(a ledger.TradeAck) {
-	trade, exists := n.ledger.Trades[a.TradeNID]
+	trade, exists := n.ledger.GetTrade(a.TradeNID)
 	if !exists {
 		return
 	}
@@ -213,7 +213,7 @@ func (n *Notifier) SyncTradeAck(a ledger.TradeAck) {
 }
 
 func (n *Notifier) SyncTradeNak(a ledger.TradeNak) {
-	trade, exists := n.ledger.Trades[a.TradeNID]
+	trade, exists := n.ledger.GetTrade(a.TradeNID)
 	if !exists {
 		return
 	}
@@ -226,7 +226,7 @@ func (n *Notifier) SyncTradeNak(a ledger.TradeNak) {
 }
 
 func (n *Notifier) SyncTradeReimburse(a ledger.TradeReimburse) {
-	trade, exists := n.ledger.Trades[a.TradeNID]
+	trade, exists := n.ledger.GetTrade(a.TradeNID)
 	if !exists {
 		return
 	}
@@ -240,13 +240,27 @@ func (n *Notifier) SyncTradeReimburse(a ledger.TradeReimburse) {
 
 func (n *Notifier) SyncContract(a ledger.Contract) {
 	n.sendNotification("contract_created", map[string]interface{}{
-		"contract_nid":  a.NID,
-		"trade_nid":     a.TradeNID,
-		"kpei_reff":     a.KpeiReff,
-		"side":          a.Side,
-		"account_code":  a.AccountCode,
-		"instrument":    a.InstrumentCode,
-		"quantity":      a.Quantity,
-		"fee_daily":     a.FeeValDaily,
+		"contract_nid": a.NID,
+		"trade_nid":    a.TradeNID,
+		"kpei_reff":    a.KpeiReff,
+		"side":         a.Side,
+		"account_code": a.AccountCode,
+		"instrument":   a.InstrumentCode,
+		"quantity":     a.Quantity,
+		"fee_daily":    a.FeeValDaily,
+	})
+}
+
+func (n *Notifier) SyncSod(s ledger.Sod) {
+	n.sendNotification("sod", map[string]interface{}{
+		"date":    s.Date.Format("2006-01-02"),
+		"message": "Start of Day - Market Opening",
+	})
+}
+
+func (n *Notifier) SyncEod(e ledger.Eod) {
+	n.sendNotification("eod", map[string]interface{}{
+		"date":    e.Date.Format("2006-01-02"),
+		"message": "End of Day - Market Closing",
 	})
 }

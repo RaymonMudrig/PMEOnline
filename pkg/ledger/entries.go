@@ -58,7 +58,6 @@ type Account struct {
 	Code            string `json:"code"` // "YU-012345"-01/02/04/05
 	SID             string `json:"sid"`
 	Name            string `json:"name"`
-	Address         string `json:"address"`
 	ParticipantNID  int    `json:"participant_nid"`
 	ParticipantCode string `json:"participant_code"`
 }
@@ -100,6 +99,10 @@ type OrderAck struct {
 type OrderNak struct {
 	OrderNID int    `json:"order_nid"`
 	Message  string `json:"message"`
+}
+
+type OrderPending struct {
+	OrderNID int `json:"order_nid"`
 }
 
 type OrderWithdraw struct {
@@ -171,4 +174,12 @@ type TradeNak struct {
 
 type TradeReimburse struct {
 	TradeNID int `json:"trade_nid"`
+}
+
+type Sod struct {
+	Date time.Time `json:"date"`
+}
+
+type Eod struct {
+	Date time.Time `json:"date"`
 }

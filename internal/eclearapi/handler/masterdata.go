@@ -23,8 +23,6 @@ type AccountRequest struct {
 	Code        string `json:"code"`
 	Name        string `json:"name"`
 	SID         string `json:"sid"`
-	Email       string `json:"email"`
-	Address     string `json:"address"`
 	Participant string `json:"participant"`
 }
 
@@ -78,25 +76,32 @@ func (h *MasterDataHandler) InsertAccounts(w http.ResponseWriter, r *http.Reques
 		}
 
 		// Check if account already exists
-		if _, exists := h.ledger.Account[acc.Code]; exists {
-			log.Printf("⚠️  Account %s already exists, skipping", acc.Code)
+		if existingAcc, exists := h.ledger.GetAccount(acc.Code); exists {
+			// Check if all properties are identical
+			if existingAcc.SID == acc.SID &&
+				existingAcc.ParticipantCode == acc.Participant &&
+				existingAcc.Name == acc.Name {
+				log.Printf("✅ Identical Account %s already exists, skipping", existingAcc.Code)
+				continue
+			}
+			// Data is different - log warning and skip (or could update)
+			log.Printf("⚠️  Account %s exists but with different data, skipping update", acc.Code)
 			continue
 		}
 
 		// Check if participant exists
-		if _, exists := h.ledger.Participant[acc.Participant]; !exists {
+		if _, exists := h.ledger.GetParticipant(acc.Participant); !exists {
 			log.Printf("⚠️  Participant %s not found for account %s", acc.Participant, acc.Code)
 			continue
 		}
 
-		participantEntity := h.ledger.Participant[acc.Participant]
+		participantEntity, _ := h.ledger.GetParticipant(acc.Participant)
 
 		account := ledger.Account{
 			NID:             generateNID("account", i),
 			Code:            acc.Code,
 			SID:             acc.SID,
 			Name:            acc.Name,
-			Address:         acc.Address,
 			ParticipantNID:  participantEntity.NID,
 			ParticipantCode: participantEntity.Code,
 		}
@@ -142,8 +147,16 @@ func (h *MasterDataHandler) InsertInstruments(w http.ResponseWriter, r *http.Req
 		}
 
 		// Check if instrument already exists
-		if _, exists := h.ledger.Instrument[inst.Code]; exists {
-			log.Printf("⚠️  Instrument %s already exists, skipping", inst.Code)
+		if existingInst, exists := h.ledger.GetInstrument(inst.Code); exists {
+			// Check if all properties are identical
+			if existingInst.Name == inst.Name &&
+				existingInst.Type == "STOCK" && // Default type is STOCK
+				existingInst.Status == inst.Status {
+				log.Printf("✅ Identical Instrument %s already exists, skipping", inst.Code)
+				continue
+			}
+			// Data is different - log warning and skip (or could update)
+			log.Printf("⚠️  Instrument %s exists but with different data, skipping update", inst.Code)
 			continue
 		}
 
@@ -202,8 +215,16 @@ func (h *MasterDataHandler) InsertParticipants(w http.ResponseWriter, r *http.Re
 		}
 
 		// Check if participant already exists
-		if _, exists := h.ledger.Participant[part.Code]; exists {
-			log.Printf("⚠️  Participant %s already exists, skipping", part.Code)
+		if existingPart, exists := h.ledger.GetParticipant(part.Code); exists {
+			// Check if all properties are identical
+			if existingPart.Name == part.Name &&
+				existingPart.BorrEligibility == part.BorrEligibility &&
+				existingPart.LendEligibility == part.LendEligibility {
+				log.Printf("✅ Identical Participant %s already exists, skipping", part.Code)
+				continue
+			}
+			// Data is different - log warning and skip (or could update)
+			log.Printf("⚠️  Participant %s exists but with different data, skipping update", part.Code)
 			continue
 		}
 
@@ -256,12 +277,12 @@ func (h *MasterDataHandler) UpdateAccountLimit(w http.ResponseWriter, r *http.Re
 		}
 
 		// Check if account exists
-		if _, exists := h.ledger.Account[limit.Code]; !exists {
+		if _, exists := h.ledger.GetAccount(limit.Code); !exists {
 			log.Printf("⚠️  Account %s not found for limit update", limit.Code)
 			continue
 		}
 
-		accountEntity := h.ledger.Account[limit.Code]
+		accountEntity, _ := h.ledger.GetAccount(limit.Code)
 
 		accountLimit := ledger.AccountLimit{
 			NID:        accountEntity.NID,

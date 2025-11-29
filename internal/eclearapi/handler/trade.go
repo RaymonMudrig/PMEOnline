@@ -65,13 +65,14 @@ func (h *TradeHandler) MatchedConfirm(w http.ResponseWriter, r *http.Request) {
 	// Find the trade by KpeiReff (which is the PmeTradeReff)
 	var tradeNID int
 	var found bool
-	for nid, trade := range h.ledger.Trades {
+	h.ledger.ForEachTrade(func(trade ledger.TradeEntity) bool {
 		if trade.KpeiReff == confirm.PmeTradeReff {
-			tradeNID = nid
+			tradeNID = trade.NID
 			found = true
-			break
+			return false // Stop iteration
 		}
-	}
+		return true // Continue iteration
+	})
 
 	if !found {
 		log.Printf("❌ Trade not found: %s", confirm.PmeTradeReff)
@@ -125,14 +126,15 @@ func (h *TradeHandler) Reimburse(w http.ResponseWriter, r *http.Request) {
 	var tradeNID int
 	var trade ledger.TradeEntity
 	var found bool
-	for nid, t := range h.ledger.Trades {
+	h.ledger.ForEachTrade(func(t ledger.TradeEntity) bool {
 		if t.KpeiReff == reimburse.PmeTradeReff {
-			tradeNID = nid
+			tradeNID = t.NID
 			trade = t
 			found = true
-			break
+			return false // Stop iteration
 		}
-	}
+		return true // Continue iteration
+	})
 
 	if !found {
 		log.Printf("❌ Trade not found: %s", reimburse.PmeTradeReff)
@@ -145,34 +147,36 @@ func (h *TradeHandler) Reimburse(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🔄 Processing ARO for trade: %s", reimburse.PmeTradeReff)
 
 		// Create new order for borrower with ARO flag
-		for _, contract := range trade.Borrower {
-			// Get the original order details
-			if origOrder, exists := h.ledger.Orders[contract.OrderNID]; exists {
-				newOrder := ledger.Order{
-					NID:               int(ledger.GetCurrentTimeMillis()),
-					PrevNID:           0, // ARO order has no previous order
-					ReffRequestID:     reimburse.PmeTradeReff + "-ARO",
-					AccountNID:        contract.AccountNID,
-					AccountCode:       contract.AccountCode,
-					ParticipantNID:    contract.AccountParticipantNID,
-					ParticipantCode:   contract.AccountParticipantCode,
-					InstrumentNID:     contract.InstrumentNID,
-					InstrumentCode:    contract.InstrumentCode,
-					Side:              "BORR",
-					Quantity:          contract.Quantity,
-					SettlementDate:    time.Now().AddDate(0, 0, 1), // T+1
-					ReimbursementDate: origOrder.ReimbursementDate.AddDate(0, 0, trade.Periode),
-					Periode:           trade.Periode,
-					State:             "S",
-					MarketPrice:       origOrder.MarketPrice,
-					Rate:              origOrder.Rate,
-					Instruction:       "ARO from " + reimburse.PmeTradeReff,
-					ARO:               true,
-				}
+		for _, contractNID := range trade.Borrower {
+			if contract, exists := h.ledger.GetContract(contractNID); exists {
+				// Get the original order details
+				if origOrder, exists := h.ledger.GetOrder(contract.OrderNID); exists {
+					newOrder := ledger.Order{
+						NID:               int(ledger.GetCurrentTimeMillis()),
+						PrevNID:           0, // ARO order has no previous order
+						ReffRequestID:     reimburse.PmeTradeReff + "-ARO",
+						AccountNID:        contract.AccountNID,
+						AccountCode:       contract.AccountCode,
+						ParticipantNID:    contract.AccountParticipantNID,
+						ParticipantCode:   contract.AccountParticipantCode,
+						InstrumentNID:     contract.InstrumentNID,
+						InstrumentCode:    contract.InstrumentCode,
+						Side:              "BORR",
+						Quantity:          contract.Quantity,
+						SettlementDate:    time.Now().AddDate(0, 0, 1), // T+1
+						ReimbursementDate: origOrder.ReimbursementDate.AddDate(0, 0, trade.Periode),
+						Periode:           trade.Periode,
+						State:             "S",
+						MarketPrice:       origOrder.MarketPrice,
+						Rate:              origOrder.Rate,
+						Instruction:       "ARO from " + reimburse.PmeTradeReff,
+						ARO:               true,
+					}
 
-				// Commit new order
-				h.ledger.Commit <- newOrder
-				log.Printf("✅ Created ARO order for account %s", contract.AccountCode)
+					// Commit new order
+					h.ledger.Commit <- newOrder
+					log.Printf("✅ Created ARO order for account %s", contract.AccountCode)
+				}
 			}
 		}
 	}
@@ -216,13 +220,14 @@ func (h *TradeHandler) LenderRecall(w http.ResponseWriter, r *http.Request) {
 	// Find the contract
 	var contract ledger.ContractEntity
 	var found bool
-	for _, c := range h.ledger.Contracts {
+	h.ledger.ForEachContract(func(c ledger.ContractEntity) bool {
 		if c.KpeiReff == recall.ContractReff {
 			contract = c
 			found = true
-			break
+			return false // Stop iteration
 		}
-	}
+		return true // Continue iteration
+	})
 
 	if !found {
 		log.Printf("❌ Contract not found: %s", recall.ContractReff)
@@ -238,7 +243,7 @@ func (h *TradeHandler) LenderRecall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the trade
-	trade, exists := h.ledger.Trades[contract.TradeNID]
+	trade, exists := h.ledger.GetTrade(contract.TradeNID)
 	if !exists {
 		log.Printf("❌ Trade not found for contract: %s", recall.ContractReff)
 		http.Error(w, "Trade not found", http.StatusInternalServerError)
@@ -247,32 +252,34 @@ func (h *TradeHandler) LenderRecall(w http.ResponseWriter, r *http.Request) {
 
 	// Create a new "matching order" for the borrower to find a new lender
 	// This will be treated like a regular borrow order and matched by the OMS
-	for _, borrowContract := range trade.Borrower {
-		newOrder := ledger.Order{
-			NID:               int(ledger.GetCurrentTimeMillis()),
-			PrevNID:           0,
-			ReffRequestID:     recall.ContractReff + "-RECALL",
-			AccountNID:        borrowContract.AccountNID,
-			AccountCode:       borrowContract.AccountCode,
-			ParticipantNID:    borrowContract.AccountParticipantNID,
-			ParticipantCode:   borrowContract.AccountParticipantCode,
-			InstrumentNID:     borrowContract.InstrumentNID,
-			InstrumentCode:    borrowContract.InstrumentCode,
-			Side:              "BORR",
-			Quantity:          contract.Quantity,
-			SettlementDate:    time.Now(), // Immediate
-			ReimbursementDate: contract.ReimburseAt,
-			Periode:           contract.Periode,
-			State:             "S",
-			MarketPrice:       0, // Will be determined at matching
-			Rate:              0,  // Will be determined at matching
-			Instruction:       "Lender Recall from " + recall.ContractReff,
-			ARO:               false,
-		}
+	for _, contractNID := range trade.Borrower {
+		if borrowContract, exists := h.ledger.GetContract(contractNID); exists {
+			newOrder := ledger.Order{
+				NID:               int(ledger.GetCurrentTimeMillis()),
+				PrevNID:           0,
+				ReffRequestID:     recall.ContractReff + "-RECALL",
+				AccountNID:        borrowContract.AccountNID,
+				AccountCode:       borrowContract.AccountCode,
+				ParticipantNID:    borrowContract.AccountParticipantNID,
+				ParticipantCode:   borrowContract.AccountParticipantCode,
+				InstrumentNID:     borrowContract.InstrumentNID,
+				InstrumentCode:    borrowContract.InstrumentCode,
+				Side:              "BORR",
+				Quantity:          contract.Quantity,
+				SettlementDate:    time.Now(), // Immediate
+				ReimbursementDate: contract.ReimburseAt,
+				Periode:           contract.Periode,
+				State:             "S",
+				MarketPrice:       0, // Will be determined at matching
+				Rate:              0, // Will be determined at matching
+				Instruction:       "Lender Recall from " + recall.ContractReff,
+				ARO:               false,
+			}
 
-		// Commit new order
-		h.ledger.Commit <- newOrder
-		log.Printf("✅ Created recall order for borrower %s", borrowContract.AccountCode)
+			// Commit new order
+			h.ledger.Commit <- newOrder
+			log.Printf("✅ Created recall order for borrower %s", borrowContract.AccountCode)
+		}
 	}
 
 	// Note: The old contract will be terminated when the new trade is matched
