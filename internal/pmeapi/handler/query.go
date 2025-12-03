@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"pmeonline/pkg/ledger"
@@ -119,8 +120,11 @@ func (h *QueryHandler) GetOrderList(w http.ResponseWriter, r *http.Request) {
 
 	// Build filter criteria
 	var orders []OrderInfo
+	totalOrders := 0
+	filteredOrders := 0
 
 	h.ledger.ForEachOrder(func(order ledger.OrderEntity) bool {
+		totalOrders++
 		// Apply filters
 		if participantCode != "" && order.ParticipantCode != participantCode {
 			return true
@@ -137,6 +141,10 @@ func (h *QueryHandler) GetOrderList(w http.ResponseWriter, r *http.Request) {
 		if stateFilter != "" && order.State != stateFilter {
 			return true
 		}
+
+		filteredOrders++
+
+		log.Printf("[APME-API] Order list: NID=%d, State=%s", order.NID, order.State)
 
 		// Add to results
 		orderInfo := OrderInfo{
@@ -161,6 +169,16 @@ func (h *QueryHandler) GetOrderList(w http.ResponseWriter, r *http.Request) {
 		orders = append(orders, orderInfo)
 		return true
 	})
+
+	log.Printf("[APME-API] GetOrderList: total=%d, filtered=%d, returned=%d", totalOrders, filteredOrders, len(orders))
+
+	// Check if specific NID is in the list
+	for _, o := range orders {
+		if o.NID == 252977047423418370 {
+			log.Printf("[APME-API] Order 252977047423418370 IS in the order list, State=%s", o.State)
+			break
+		}
+	}
 
 	respondSuccess(w, "Order list retrieved", map[string]interface{}{
 		"count":  len(orders),

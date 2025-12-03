@@ -3,12 +3,14 @@ package ledger
 import "time"
 
 type ServiceStart struct {
+	Timestamp time.Time `json:"timestamp"`
 	ID        string    `json:"id"`
 	StartID   string    `json:"start_id"`
 	StartTime time.Time `json:"start_time"`
 }
 
 type Holiday struct {
+	Timestamp   time.Time `json:"timestamp"`
 	NID         int       `json:"nid"`
 	Tahun       int       `json:"tahun"`
 	Date        time.Time `json:"date"`
@@ -16,6 +18,7 @@ type Holiday struct {
 }
 
 type Parameter struct {
+	Timestamp         time.Time `json:"timestamp"`
 	NID               int       `json:"nid"`
 	Update            time.Time `json:"update"`
 	Description       string    `json:"description"`
@@ -28,6 +31,7 @@ type Parameter struct {
 }
 
 type SessionTime struct {
+	Timestamp     time.Time `json:"timestamp"`
 	NID           int       `json:"nid"`
 	Description   string    `json:"description"`
 	Update        time.Time `json:"update"`
@@ -38,39 +42,44 @@ type SessionTime struct {
 }
 
 type Instrument struct {
-	NID    int    `json:"nid"`
-	Code   string `json:"code"` // KPEI-012345
-	Name   string `json:"name"` // stok Name
-	Type   string `json:"type"`
-	Status bool   `json:"status"` // Eligible
+	Timestamp time.Time `json:"timestamp"`
+	NID       int       `json:"nid"`
+	Code      string    `json:"code"` // KPEI-012345
+	Name      string    `json:"name"` // stok Name
+	Type      string    `json:"type"`
+	Status    bool      `json:"status"` // Eligible
 }
 
 type Participant struct {
-	NID             int    `json:"nid"`
-	Code            string `json:"code"` // YU
-	Name            string `json:"name"`
-	BorrEligibility bool   `json:"borr_eligibility"`
-	LendEligibility bool   `json:"lend_eligibility"`
+	Timestamp       time.Time `json:"timestamp"`
+	NID             int       `json:"nid"`
+	Code            string    `json:"code"` // YU
+	Name            string    `json:"name"`
+	BorrEligibility bool      `json:"borr_eligibility"`
+	LendEligibility bool      `json:"lend_eligibility"`
 }
 
 type Account struct {
-	NID             int    `json:"nid"`
-	Code            string `json:"code"` // "YU-012345"-01/02/04/05
-	SID             string `json:"sid"`
-	Name            string `json:"name"`
-	ParticipantNID  int    `json:"participant_nid"`
-	ParticipantCode string `json:"participant_code"`
+	Timestamp       time.Time `json:"timestamp"`
+	NID             int       `json:"nid"`
+	Code            string    `json:"code"` // "YU-012345"-01/02/04/05
+	SID             string    `json:"sid"`
+	Name            string    `json:"name"`
+	ParticipantNID  int       `json:"participant_nid"`
+	ParticipantCode string    `json:"participant_code"`
 }
 
 type AccountLimit struct {
-	NID        int     `json:"nid"`
-	Code       string  `json:"code"` // "YU-012345"-01/02/04/05
-	AccountNID int     `json:"account_nid"`
-	TradeLimit float64 `json:"trade_limit"`
-	PoolLimit  float64 `json:"pool_limit"`
+	Timestamp  time.Time `json:"timestamp"`
+	NID        int       `json:"nid"`
+	Code       string    `json:"code"` // "YU-012345"-01/02/04/05
+	AccountNID int       `json:"account_nid"`
+	TradeLimit float64   `json:"trade_limit"`
+	PoolLimit  float64   `json:"pool_limit"`
 }
 
 type Order struct {
+	Timestamp         time.Time `json:"timestamp"`
 	NID               int       `json:"nid"`
 	PrevNID           int       `json:"prev_nid"`
 	ReffRequestID     string    `json:"reff_request_id"`
@@ -93,33 +102,40 @@ type Order struct {
 }
 
 type OrderAck struct {
-	OrderNID int `json:"order_nid"`
+	Timestamp time.Time `json:"timestamp"`
+	OrderNID  int       `json:"order_nid"`
 }
 
 type OrderNak struct {
-	OrderNID int    `json:"order_nid"`
-	Message  string `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+	OrderNID  int       `json:"order_nid"`
+	Message   string    `json:"message"`
 }
 
 type OrderPending struct {
-	OrderNID int `json:"order_nid"`
+	Timestamp time.Time `json:"timestamp"`
+	OrderNID  int       `json:"order_nid"`
 }
 
 type OrderWithdraw struct {
-	OrderNID      int    `json:"order_nid"`
-	ReffRequestID string `json:"reff_request_id"`
+	Timestamp     time.Time `json:"timestamp"`
+	OrderNID      int       `json:"order_nid"`
+	ReffRequestID string    `json:"reff_request_id"`
 }
 
 type OrderWithdrawAck struct {
-	OrderNID int `json:"order_nid"`
+	Timestamp time.Time `json:"timestamp"`
+	OrderNID  int       `json:"order_nid"`
 }
 
 type OrderWithdrawNak struct {
-	OrderNID int    `json:"order_nid"`
-	Message  string `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+	OrderNID  int       `json:"order_nid"`
+	Message   string    `json:"message"`
 }
 
 type Trade struct {
+	Timestamp      time.Time `json:"timestamp"`
 	NID            int       `json:"nid"`
 	KpeiReff       string    `json:"kpei_reff"`
 	InstrumentNID  int       `json:"instrument_nid"`
@@ -137,6 +153,7 @@ type Trade struct {
 }
 
 type Contract struct {
+	Timestamp              time.Time `json:"timestamp"`
 	NID                    int       `json:"nid"`
 	TradeNID               int       `json:"trade_nid"`
 	KpeiReff               string    `json:"kpei_reff"`
@@ -160,26 +177,32 @@ type Contract struct {
 }
 
 type TradeWait struct {
-	TradeNID int `json:"trade_nid"`
+	Timestamp time.Time `json:"timestamp"`
+	TradeNID  int       `json:"trade_nid"`
 }
 
 type TradeAck struct {
-	TradeNID int `json:"trade_nid"`
+	Timestamp time.Time `json:"timestamp"`
+	TradeNID  int       `json:"trade_nid"`
 }
 
 type TradeNak struct {
-	TradeNID int    `json:"trade_nid"`
-	Message  string `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+	TradeNID  int       `json:"trade_nid"`
+	Message   string    `json:"message"`
 }
 
 type TradeReimburse struct {
-	TradeNID int `json:"trade_nid"`
+	Timestamp time.Time `json:"timestamp"`
+	TradeNID  int       `json:"trade_nid"`
 }
 
 type Sod struct {
-	Date time.Time `json:"date"`
+	Timestamp time.Time `json:"timestamp"`
+	Date      time.Time `json:"date"`
 }
 
 type Eod struct {
-	Date time.Time `json:"date"`
+	Timestamp time.Time `json:"timestamp"`
+	Date      time.Time `json:"date"`
 }

@@ -87,6 +87,7 @@ type OrderEntity struct {
 	WReffRequestID    string    `json:"w_reff_request_id"`
 	Message           string    `json:"message"`
 	EntryAt           time.Time `json:"entry_at"`
+	PendingAt         time.Time `json:"pending_at"`
 	OpenAt            time.Time `json:"open_at"`
 	RejectAt          time.Time `json:"reject_at"`
 	AmmendAt          time.Time `json:"ammend_at"`

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -49,6 +50,7 @@ type AmendOrderRequest struct {
 	ReimbursementDate time.Time `json:"reimbursement_date,omitempty"`
 	Periode           int       `json:"periode,omitempty"`
 	ARO               *bool     `json:"aro,omitempty"`
+	Instruction       string    `json:"instruction,omitempty"`
 }
 
 // WithdrawOrderRequest represents an order withdrawal request
@@ -146,37 +148,63 @@ func (h *OrderHandler) NewOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Return success response
 	respondSuccess(w, "Order submitted successfully", map[string]interface{}{
-		"order_nid":      orderNID,
+		"order_nid":       orderNID,
 		"reff_request_id": req.ReffRequestID,
-		"status":         "submitted",
+		"status":          "submitted",
 	})
 }
 
 // AmendOrder handles POST /api/order/amend
 func (h *OrderHandler) AmendOrder(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[APME-API] AmendOrder handler called")
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		log.Printf("[APME-API] Failed to read request body: %v", err)
 		respondError(w, http.StatusBadRequest, "Failed to read request body")
 		return
 	}
 	defer r.Body.Close()
 
+	log.Printf("[APME-API] Request body: %s", string(body))
+
 	var req AmendOrderRequest
 	if err := json.Unmarshal(body, &req); err != nil {
+		log.Printf("[APME-API] Failed to parse JSON: %v", err)
 		respondError(w, http.StatusBadRequest, "Invalid JSON format")
 		return
 	}
 
+	log.Printf("[APME-API] Parsed request: %+v", req)
+
 	// Validate order exists
+	log.Printf("[APME-API] Attempting to amend order NID: %d", req.OrderNID)
+
+	// Debug: List all orders in ledger
+	orderCount := 0
+	foundMatch := false
+	h.ledger.ForEachOrder(func(o ledger.OrderEntity) bool {
+		log.Printf("[APME-API] Ledger Order: NID=%d, State=%s", o.NID, o.State)
+		orderCount++
+		if o.NID == req.OrderNID {
+			foundMatch = true
+			log.Printf("[APME-API] Found order in iteration: NID=%d, State=%s", o.NID, o.State)
+		}
+		return true
+	})
+	log.Printf("[APME-API] Total orders in ledger: %d, Found via iteration: %v", orderCount, foundMatch)
+
 	originalOrder, exists := h.ledger.GetOrder(req.OrderNID)
 	if !exists {
-		respondError(w, http.StatusNotFound, "Order not found")
+		log.Printf("[APME-API] Order not found via GetOrder: %d", req.OrderNID)
+		respondError(w, http.StatusNotFound, "Order not found: "+fmt.Sprintf("%d", req.OrderNID))
 		return
 	}
 
 	// Check if order can be amended (must be Open or Partial)
+	log.Printf("[APME-API] Order %d state: %s", req.OrderNID, originalOrder.State)
 	if originalOrder.State != "O" && originalOrder.State != "P" {
-		respondError(w, http.StatusUnprocessableEntity, "Order cannot be amended in current state")
+		respondError(w, http.StatusUnprocessableEntity, "Order cannot be amended in current state: "+originalOrder.State+" (must be O or P)")
 		return
 	}
 
@@ -227,6 +255,9 @@ func (h *OrderHandler) AmendOrder(w http.ResponseWriter, r *http.Request) {
 	if req.ARO != nil {
 		amendedOrder.ARO = *req.ARO
 	}
+	if req.Instruction != "" {
+		amendedOrder.Instruction = req.Instruction
+	}
 
 	// Commit to Kafka
 	h.ledger.Commit <- amendedOrder
@@ -241,29 +272,40 @@ func (h *OrderHandler) AmendOrder(w http.ResponseWriter, r *http.Request) {
 
 // WithdrawOrder handles POST /api/order/withdraw
 func (h *OrderHandler) WithdrawOrder(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[APME-API] WithdrawOrder handler called")
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		log.Printf("[APME-API] Failed to read request body: %v", err)
 		respondError(w, http.StatusBadRequest, "Failed to read request body")
 		return
 	}
 	defer r.Body.Close()
 
+	log.Printf("[APME-API] Request body: %s", string(body))
+
 	var req WithdrawOrderRequest
 	if err := json.Unmarshal(body, &req); err != nil {
+		log.Printf("[APME-API] Failed to parse JSON: %v", err)
 		respondError(w, http.StatusBadRequest, "Invalid JSON format")
 		return
 	}
 
+	log.Printf("[APME-API] Parsed request: %+v", req)
+
 	// Validate order exists
+	log.Printf("[APME-API] Attempting to withdraw order NID: %d", req.OrderNID)
 	order, exists := h.ledger.GetOrder(req.OrderNID)
 	if !exists {
-		respondError(w, http.StatusNotFound, "Order not found")
+		log.Printf("[APME-API] Order not found: %d", req.OrderNID)
+		respondError(w, http.StatusNotFound, "Order not found: "+fmt.Sprintf("%d", req.OrderNID))
 		return
 	}
 
 	// Check if order can be withdrawn
+	log.Printf("[APME-API] Order %d state: %s", req.OrderNID, order.State)
 	if order.State != "O" && order.State != "P" {
-		respondError(w, http.StatusUnprocessableEntity, "Order cannot be withdrawn in current state")
+		respondError(w, http.StatusUnprocessableEntity, "Order cannot be withdrawn in current state: "+order.State+" (must be O or P)")
 		return
 	}
 

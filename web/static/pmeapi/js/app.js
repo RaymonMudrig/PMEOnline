@@ -6,6 +6,12 @@ let allParticipants = [];
 let allInstruments = [];
 let allAccounts = [];
 
+// Sorting state
+let ordersSortColumn = 'nid';
+let ordersSortDirection = 'desc';
+let contractsSortColumn = 'nid';
+let contractsSortDirection = 'desc';
+
 function showTab(tabName) {
     const tabs = document.querySelectorAll('.tab-content');
     tabs.forEach(tab => tab.classList.remove('active'));
@@ -189,7 +195,10 @@ async function submitBorrowOrder(event) {
 
         if (result.status === 'success') {
             showStatus('borrow-status', '✅ Borrow order submitted! Order NID: ' + result.data.order_nid, 'success');
-            resetBorrowForm();
+            setTimeout(() => {
+                resetBorrowForm();
+                closeModal('borrow');
+            }, 2000);
         } else {
             throw new Error(result.message || 'Unknown error');
         }
@@ -229,7 +238,10 @@ async function submitLendOrder(event) {
 
         if (result.status === 'success') {
             showStatus('lend-status', '✅ Lend order submitted! Order NID: ' + result.data.order_nid, 'success');
-            resetLendForm();
+            setTimeout(() => {
+                resetLendForm();
+                closeModal('lend');
+            }, 2000);
         } else {
             throw new Error(result.message || 'Unknown error');
         }
@@ -279,7 +291,13 @@ async function loadOrders() {
 
     try {
         const response = await fetch(API_BASE + '/api/order/list?' + params.toString());
-        const result = await response.json();
+        const text = await response.text();
+
+        // HACK: Replace large integer NIDs with strings before parsing
+        // This preserves precision by preventing JSON.parse from converting to Number
+        const fixedText = text.replace(/"nid":(\d{15,})/g, '"nid":"$1"');
+
+        const result = JSON.parse(fixedText);
 
         if (result.status === 'success') {
             const orders = result.data.orders || [];
@@ -294,6 +312,38 @@ async function loadOrders() {
     }
 }
 
+function sortOrders(orders, column) {
+    // Toggle direction if clicking the same column
+    if (ordersSortColumn === column) {
+        ordersSortDirection = ordersSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        ordersSortColumn = column;
+        ordersSortDirection = 'asc';
+    }
+
+    const sorted = [...orders].sort((a, b) => {
+        let aVal = a[column];
+        let bVal = b[column];
+
+        // Handle numeric values
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return ordersSortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+
+        // Handle string values
+        aVal = String(aVal || '').toLowerCase();
+        bVal = String(bVal || '').toLowerCase();
+
+        if (ordersSortDirection === 'asc') {
+            return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+        } else {
+            return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+        }
+    });
+
+    displayOrders(sorted);
+}
+
 function displayOrders(orders) {
     const tableDiv = document.getElementById('orders-table');
 
@@ -302,10 +352,26 @@ function displayOrders(orders) {
         return;
     }
 
+    const getSortIcon = (column) => {
+        if (ordersSortColumn !== column) return ' <span class="sort-icon">⇅</span>';
+        return ordersSortDirection === 'asc' ? ' <span class="sort-icon active">▲</span>' : ' <span class="sort-icon active">▼</span>';
+    };
+
     let html = '<table><thead><tr>';
-    html += '<th>NID</th><th>Side</th><th>Instrument</th><th>Quantity</th><th>Done</th>';
-    html += '<th>Settlement</th><th>Periode</th><th>Rate</th><th>State</th><th>ARO</th><th>Entry At</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'nid\')">NID' + getSortIcon('nid') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'side\')">Side' + getSortIcon('side') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'participant_code\')">Participant' + getSortIcon('participant_code') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'account_code\')">Account' + getSortIcon('account_code') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'instrument_code\')">Instrument' + getSortIcon('instrument_code') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'quantity\')">Quantity' + getSortIcon('quantity') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'done_quantity\')">Done' + getSortIcon('done_quantity') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'state\')">State' + getSortIcon('state') + '</th>';
+    html += '<th class="sortable" onclick="sortOrders(window.currentOrders, \'entry_at\')">Entry At' + getSortIcon('entry_at') + '</th>';
+    html += '<th>Actions</th>';
     html += '</tr></thead><tbody>';
+
+    // Store current orders globally for sorting
+    window.currentOrders = orders;
 
     orders.forEach(o => {
         html += '<tr>';
@@ -313,23 +379,36 @@ function displayOrders(orders) {
         // Add tooltip with hidden columns
         html += '<div class="row-tooltip">';
         html += '<div class="tooltip-row"><span class="tooltip-label">Reff Request ID:</span><span class="tooltip-value">' + o.reff_request_id + '</span></div>';
-        html += '<div class="tooltip-row"><span class="tooltip-label">Participant:</span><span class="tooltip-value">' + o.participant_code + '</span></div>';
-        html += '<div class="tooltip-row"><span class="tooltip-label">Account:</span><span class="tooltip-value">' + o.account_code + '</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Settlement Date:</span><span class="tooltip-value">' + o.settlement_date + '</span></div>';
         html += '<div class="tooltip-row"><span class="tooltip-label">Reimbursement Date:</span><span class="tooltip-value">' + o.reimbursement_date + '</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Periode:</span><span class="tooltip-value">' + o.periode + ' days</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">Rate:</span><span class="tooltip-value">' + o.rate.toFixed(2) + '%</span></div>';
+        html += '<div class="tooltip-row"><span class="tooltip-label">ARO:</span><span class="tooltip-value">' + (o.aro ? 'Yes' : 'No') + '</span></div>';
         html += '<div class="tooltip-row"><span class="tooltip-label">Market Price:</span><span class="tooltip-value">' + o.market_price.toLocaleString() + '</span></div>';
         html += '<div class="tooltip-row"><span class="tooltip-label">Message:</span><span class="tooltip-value">' + (o.message || '-') + '</span></div>';
         html += '</div>';
         html += '</td>';
         html += '<td><span class="badge ' + (o.side === 'BORR' ? 'badge-danger' : 'badge-success') + '">' + o.side + '</span></td>';
+        html += '<td>' + o.participant_code + '</td>';
+        html += '<td>' + o.account_code + '</td>';
         html += '<td>' + o.instrument_code + '</td>';
         html += '<td>' + o.quantity.toLocaleString() + '</td>';
         html += '<td>' + o.done_quantity.toLocaleString() + '</td>';
-        html += '<td>' + o.settlement_date + '</td>';
-        html += '<td>' + o.periode + ' days</td>';
-        html += '<td>' + o.rate.toFixed(2) + '%</td>';
         html += '<td><span class="badge badge-' + getStateBadge(o.state) + '">' + getStateLabel(o.state) + '</span></td>';
-        html += '<td>' + (o.aro ? '✓' : '') + '</td>';
         html += '<td>' + o.entry_at + '</td>';
+
+        // Action buttons (only show for Open or Partial orders)
+        html += '<td class="action-cell">';
+        if (o.state === 'O' || o.state === 'P') {
+            // Store order index for amendment
+            const orderIndex = orders.indexOf(o);
+            html += '<button class="btn-small btn-amend-small" onclick="openAmendModalByIndex(' + orderIndex + ')">✏️</button> ';
+            html += '<button class="btn-small btn-withdraw-small" onclick="openWithdrawModal(\'' + o.nid + '\')">🗑️</button>';
+        } else {
+            html += '<span style="color: #adb5bd;">-</span>';
+        }
+        html += '</td>';
+
         html += '</tr>';
     });
 
@@ -387,6 +466,38 @@ async function loadContracts() {
     }
 }
 
+function sortContracts(contracts, column) {
+    // Toggle direction if clicking the same column
+    if (contractsSortColumn === column) {
+        contractsSortDirection = contractsSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        contractsSortColumn = column;
+        contractsSortDirection = 'asc';
+    }
+
+    const sorted = [...contracts].sort((a, b) => {
+        let aVal = a[column];
+        let bVal = b[column];
+
+        // Handle numeric values
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return contractsSortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+
+        // Handle string values
+        aVal = String(aVal || '').toLowerCase();
+        bVal = String(bVal || '').toLowerCase();
+
+        if (contractsSortDirection === 'asc') {
+            return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+        } else {
+            return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+        }
+    });
+
+    displayContracts(sorted);
+}
+
 function displayContracts(contracts) {
     const tableDiv = document.getElementById('contracts-table');
 
@@ -395,10 +506,27 @@ function displayContracts(contracts) {
         return;
     }
 
+    const getSortIcon = (column) => {
+        if (contractsSortColumn !== column) return ' <span class="sort-icon">⇅</span>';
+        return contractsSortDirection === 'asc' ? ' <span class="sort-icon active">▲</span>' : ' <span class="sort-icon active">▼</span>';
+    };
+
     let html = '<table><thead><tr>';
-    html += '<th>NID</th><th>KPEI Ref</th><th>Side</th><th>Instrument</th><th>Quantity</th>';
-    html += '<th>Periode</th><th>Fee Flat</th><th>Fee Daily</th><th>Fee Accum</th><th>State</th><th>Matched At</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'nid\')">NID' + getSortIcon('nid') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'kpei_reff\')">KPEI Ref' + getSortIcon('kpei_reff') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'side\')">Side' + getSortIcon('side') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'instrument_code\')">Instrument' + getSortIcon('instrument_code') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'quantity\')">Quantity' + getSortIcon('quantity') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'periode\')">Periode' + getSortIcon('periode') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'fee_flat_val\')">Fee Flat' + getSortIcon('fee_flat_val') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'fee_val_daily\')">Fee Daily' + getSortIcon('fee_val_daily') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'fee_val_accumulated\')">Fee Accum' + getSortIcon('fee_val_accumulated') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'state\')">State' + getSortIcon('state') + '</th>';
+    html += '<th class="sortable" onclick="sortContracts(window.currentContracts, \'matched_at\')">Matched At' + getSortIcon('matched_at') + '</th>';
     html += '</tr></thead><tbody>';
+
+    // Store current contracts globally for sorting
+    window.currentContracts = contracts;
 
     contracts.forEach(c => {
         html += '<tr>';
@@ -577,6 +705,238 @@ function clearSBLFilters() {
 function clearAggFilters() {
     document.getElementById('agg-instrument').value = '';
     document.getElementById('agg-side').value = '';
+}
+
+// Modal functions
+function openModal(modalName) {
+    const modal = document.getElementById(modalName + '-modal');
+    if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeModal(modalName) {
+    const modal = document.getElementById(modalName + '-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+
+        // Hide status messages when closing
+        const statusId = modalName + '-status';
+        const statusEl = document.getElementById(statusId);
+        if (statusEl) {
+            statusEl.style.display = 'none';
+        }
+    }
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const activeModal = document.querySelector('.modal.active');
+        if (activeModal) {
+            const modalName = activeModal.id.replace('-modal', '');
+            closeModal(modalName);
+        }
+    }
+});
+
+// Amend Order
+async function submitAmendOrder(event) {
+    event.preventDefault();
+    showStatus('amend-status', '⏳ Submitting amendment...', 'loading');
+
+    const orderNIDStr = document.getElementById('amend-order-nid').value.trim();
+
+    // Validate order NID
+    if (!orderNIDStr || orderNIDStr === '' || orderNIDStr === '0') {
+        showStatus('amend-status', '❌ Error: Invalid Order NID', 'error');
+        return;
+    }
+
+    console.log('[AMEND] Order NID string from input:', orderNIDStr);
+
+    // Try to preserve precision by using the string directly in JSON
+    // We'll manually build the JSON to avoid Number precision loss
+    const orderNID = orderNIDStr;  // Keep as string for now
+
+    const quantity = document.getElementById('amend-quantity').value;
+    const settlement = document.getElementById('amend-settlement').value;
+    const reimbursement = document.getElementById('amend-reimbursement').value;
+    const periode = document.getElementById('amend-periode').value;
+    const aro = document.getElementById('amend-aro').value;
+    const instruction = document.getElementById('amend-instruction').value;
+
+    // Build JSON manually to preserve large integer precision
+    let jsonBody = `{"order_nid":${orderNID},"reff_request_id":"${generateReffId('AMND')}"`;
+
+    if (quantity) {
+        jsonBody += `,"quantity":${parseFloat(quantity)}`;
+    }
+    if (settlement) {
+        jsonBody += `,"settlement_date":"${settlement}T00:00:00Z"`;
+    }
+    if (reimbursement) {
+        jsonBody += `,"reimbursement_date":"${reimbursement}T00:00:00Z"`;
+    }
+    if (periode) {
+        jsonBody += `,"periode":${parseInt(periode)}`;
+    }
+    if (aro) {
+        jsonBody += `,"aro":${aro === 'true'}`;
+    }
+    if (instruction) {
+        jsonBody += `,"instruction":"${instruction.replace(/"/g, '\\"')}"`;
+    }
+
+    jsonBody += '}';
+
+    console.log('[AMEND] Submitting amendment request (raw JSON):', jsonBody);
+
+    try {
+        const response = await fetch(API_BASE + '/api/order/amend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: jsonBody
+        });
+
+        const result = await response.json();
+        console.log('[AMEND] Response:', result);
+
+        if (result.status === 'success') {
+            showStatus('amend-status', '✅ Order amended! Original: ' + result.data.original_order_nid + ', New: ' + result.data.new_order_nid, 'success');
+            setTimeout(() => {
+                resetAmendForm();
+                closeModal('amend');
+            }, 2000);
+        } else {
+            throw new Error(result.message || 'Unknown error');
+        }
+    } catch (error) {
+        showStatus('amend-status', '❌ Error: ' + error.message, 'error');
+    }
+}
+
+function resetAmendForm() {
+    document.getElementById('amend-form').reset();
+    // Reset all fields to empty
+    document.getElementById('amend-quantity').value = '';
+    document.getElementById('amend-settlement').value = '';
+    document.getElementById('amend-reimbursement').value = '';
+    document.getElementById('amend-periode').value = '';
+    document.getElementById('amend-aro').value = '';
+    document.getElementById('amend-instruction').value = '';
+}
+
+// Withdraw Order
+async function submitWithdrawOrder(event) {
+    event.preventDefault();
+    showStatus('withdraw-status', '⏳ Submitting withdrawal...', 'loading');
+
+    const orderNIDStr = document.getElementById('withdraw-order-nid').value.trim();
+
+    // Validate order NID
+    if (!orderNIDStr || orderNIDStr === '' || orderNIDStr === '0') {
+        showStatus('withdraw-status', '❌ Error: Invalid Order NID', 'error');
+        return;
+    }
+
+    console.log('[WITHDRAW] Order NID string from input:', orderNIDStr);
+
+    // Keep as string to preserve precision
+    const orderNID = orderNIDStr;
+
+    // Build JSON manually to preserve large integer precision
+    const jsonBody = `{"order_nid":${orderNID},"reff_request_id":"${generateReffId('WDRW')}"}`;
+
+    console.log('[WITHDRAW] Submitting withdrawal request (raw JSON):', jsonBody);
+
+    try {
+        const response = await fetch(API_BASE + '/api/order/withdraw', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: jsonBody
+        });
+
+        const result = await response.json();
+        console.log('[WITHDRAW] Response:', result);
+
+        if (result.status === 'success') {
+            showStatus('withdraw-status', '✅ Order withdrawal submitted! Order NID: ' + result.data.order_nid, 'success');
+            setTimeout(() => {
+                document.getElementById('withdraw-form').reset();
+                closeModal('withdraw');
+            }, 2000);
+        } else {
+            throw new Error(result.message || 'Unknown error');
+        }
+    } catch (error) {
+        showStatus('withdraw-status', '❌ Error: ' + error.message, 'error');
+    }
+}
+
+// Helper function to open amend modal by order index
+function openAmendModalByIndex(index) {
+    if (!window.currentOrders || !window.currentOrders[index]) {
+        console.error('[AMEND] Order not found at index:', index);
+        return;
+    }
+
+    const order = window.currentOrders[index];
+    openAmendModal(order);
+}
+
+// Helper function to open amend modal with pre-filled order data
+function openAmendModal(order) {
+    openModal('amend');
+    console.log('[AMEND] Opening modal for order:', order);
+
+    // Fill in order NID (readonly)
+    document.getElementById('amend-order-nid').value = String(order.nid);
+
+    // Pre-fill all fields with current values
+    document.getElementById('amend-quantity').value = order.quantity || '';
+    document.getElementById('amend-settlement').value = order.settlement_date || '';
+    document.getElementById('amend-reimbursement').value = order.reimbursement_date || '';
+    document.getElementById('amend-periode').value = order.periode || '';
+    document.getElementById('amend-aro').value = order.aro === true ? 'true' : order.aro === false ? 'false' : '';
+    document.getElementById('amend-instruction').value = order.instruction || '';
+
+    // Update modal title and show/hide fields based on side
+    const modalTitle = document.querySelector('#amend-modal .modal-header h2');
+    const quantityGroup = document.getElementById('amend-quantity-group');
+    const settlementGroup = document.getElementById('amend-settlement-group');
+    const reimbursementGroup = document.getElementById('amend-reimbursement-group');
+    const periodeGroup = document.getElementById('amend-periode-group');
+    const aroGroup = document.getElementById('amend-aro-group');
+    const instructionGroup = document.getElementById('amend-instruction-group');
+
+    if (order.side === 'LEND') {
+        modalTitle.textContent = '✏️ Amend Lend Order (Only Quantity)';
+        quantityGroup.style.display = 'flex';
+        settlementGroup.style.display = 'none';
+        reimbursementGroup.style.display = 'none';
+        periodeGroup.style.display = 'none';
+        aroGroup.style.display = 'none';
+        instructionGroup.style.display = 'none';
+    } else if (order.side === 'BORR') {
+        modalTitle.textContent = '✏️ Amend Borrow Order';
+        quantityGroup.style.display = 'flex';
+        settlementGroup.style.display = 'flex';
+        reimbursementGroup.style.display = 'flex';
+        periodeGroup.style.display = 'flex';
+        aroGroup.style.display = 'flex';
+        instructionGroup.style.display = 'flex';
+    }
+}
+
+// Helper function to open withdraw modal with pre-filled order NID
+function openWithdrawModal(orderNID) {
+    openModal('withdraw');
+    // Convert string NID to ensure no precision loss
+    document.getElementById('withdraw-order-nid').value = String(orderNID);
+    console.log('[WITHDRAW] Opening modal for order NID:', orderNID);
 }
 
 // Initialize on page load

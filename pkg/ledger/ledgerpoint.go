@@ -341,8 +341,14 @@ func (obj *LedgerPoint) go_process(ctx context.Context) {
 				msg.Headers = []kafka.Header{{Key: "event-type", Value: []byte("OrderPending")}}
 			case OrderWithdraw:
 				msg.Headers = []kafka.Header{{Key: "event-type", Value: []byte("OrderWithdraw")}}
+			case OrderWithdrawAck:
+				msg.Headers = []kafka.Header{{Key: "event-type", Value: []byte("OrderWithdrawAck")}}
+			case OrderWithdrawNak:
+				msg.Headers = []kafka.Header{{Key: "event-type", Value: []byte("OrderWithdrawNak")}}
 			case Trade:
 				msg.Headers = []kafka.Header{{Key: "event-type", Value: []byte("Trade")}}
+			case TradeWait:
+				msg.Headers = []kafka.Header{{Key: "event-type", Value: []byte("TradeWait")}}
 			case TradeAck:
 				msg.Headers = []kafka.Header{{Key: "event-type", Value: []byte("TradeAck")}}
 			case TradeNak:
@@ -372,86 +378,124 @@ func (obj *LedgerPoint) go_process(ctx context.Context) {
 				continue
 			}
 
+			// Extract Kafka message timestamp
+			kafkaTimestamp := msg.Time
+
 			switch string(msg.Headers[0].Value) {
 			case "ServiceStart":
 				var serviceStart ServiceStart
 				json.Unmarshal(msg.Value, &serviceStart)
+				serviceStart.Timestamp = kafkaTimestamp
 				obj.SyncServiceStart(serviceStart)
 			case "Holiday":
 				var holiday Holiday
 				json.Unmarshal(msg.Value, &holiday)
+				holiday.Timestamp = kafkaTimestamp
 				obj.SyncHoliday(holiday)
 			case "Parameter":
 				var parameter Parameter
 				json.Unmarshal(msg.Value, &parameter)
+				parameter.Timestamp = kafkaTimestamp
 				obj.SyncParameter(parameter)
 			case "SessionTime":
 				var sessionTime SessionTime
 				json.Unmarshal(msg.Value, &sessionTime)
+				sessionTime.Timestamp = kafkaTimestamp
 				obj.SyncSessionTime(sessionTime)
 			case "Account":
 				var account Account
 				json.Unmarshal(msg.Value, &account)
+				account.Timestamp = kafkaTimestamp
 				obj.SyncAccount(account)
 			case "AccountLimit":
 				var accountLimit AccountLimit
 				json.Unmarshal(msg.Value, &accountLimit)
+				accountLimit.Timestamp = kafkaTimestamp
 				obj.SyncAccountLimit(accountLimit)
 			case "Instrument":
 				var instrument Instrument
 				json.Unmarshal(msg.Value, &instrument)
+				instrument.Timestamp = kafkaTimestamp
 				obj.SyncInstrument(instrument)
 			case "Participant":
 				var participant Participant
 				json.Unmarshal(msg.Value, &participant)
+				participant.Timestamp = kafkaTimestamp
 				obj.SyncParticipant(participant)
 			case "Order":
 				var order Order
 				json.Unmarshal(msg.Value, &order)
+				order.Timestamp = kafkaTimestamp
 				obj.SyncOrder(order)
 			case "OrderAck":
 				var orderAck OrderAck
 				json.Unmarshal(msg.Value, &orderAck)
+				orderAck.Timestamp = kafkaTimestamp
 				obj.SyncOrderAck(orderAck)
 			case "OrderNak":
 				var orderNak OrderNak
 				json.Unmarshal(msg.Value, &orderNak)
+				orderNak.Timestamp = kafkaTimestamp
 				obj.SyncOrderNak(orderNak)
 			case "OrderPending":
 				var orderPending OrderPending
 				json.Unmarshal(msg.Value, &orderPending)
+				orderPending.Timestamp = kafkaTimestamp
 				obj.SyncOrderPending(orderPending)
 			case "OrderWithdraw":
 				var orderWithdraw OrderWithdraw
 				json.Unmarshal(msg.Value, &orderWithdraw)
+				orderWithdraw.Timestamp = kafkaTimestamp
 				obj.SyncOrderWithdraw(orderWithdraw)
+			case "OrderWithdrawAck":
+				var orderWithdrawAck OrderWithdrawAck
+				json.Unmarshal(msg.Value, &orderWithdrawAck)
+				orderWithdrawAck.Timestamp = kafkaTimestamp
+				obj.SyncOrderWithdrawAck(orderWithdrawAck)
+			case "OrderWithdrawNak":
+				var orderWithdrawNak OrderWithdrawNak
+				json.Unmarshal(msg.Value, &orderWithdrawNak)
+				orderWithdrawNak.Timestamp = kafkaTimestamp
+				obj.SyncOrderWithdrawNak(orderWithdrawNak)
 			case "Trade":
 				var trade Trade
 				json.Unmarshal(msg.Value, &trade)
+				trade.Timestamp = kafkaTimestamp
 				obj.SyncTrade(trade)
+			case "TradeWait":
+				var tradeWait TradeWait
+				json.Unmarshal(msg.Value, &tradeWait)
+				tradeWait.Timestamp = kafkaTimestamp
+				obj.SyncTradeWait(tradeWait)
 			case "TradeAck":
 				var tradeAck TradeAck
 				json.Unmarshal(msg.Value, &tradeAck)
+				tradeAck.Timestamp = kafkaTimestamp
 				obj.SyncTradeAck(tradeAck)
 			case "TradeNak":
 				var tradeNak TradeNak
 				json.Unmarshal(msg.Value, &tradeNak)
+				tradeNak.Timestamp = kafkaTimestamp
 				obj.SyncTradeNak(tradeNak)
 			case "TradeReimburse":
 				var tradeReimburse TradeReimburse
 				json.Unmarshal(msg.Value, &tradeReimburse)
+				tradeReimburse.Timestamp = kafkaTimestamp
 				obj.SyncTradeReimburse(tradeReimburse)
 			case "Contract":
 				var contract Contract
 				json.Unmarshal(msg.Value, &contract)
+				contract.Timestamp = kafkaTimestamp
 				obj.SyncContract(contract)
 			case "Sod":
 				var sod Sod
 				json.Unmarshal(msg.Value, &sod)
+				sod.Timestamp = kafkaTimestamp
 				obj.SyncSod(sod)
 			case "Eod":
 				var eod Eod
 				json.Unmarshal(msg.Value, &eod)
+				eod.Timestamp = kafkaTimestamp
 				obj.SyncEod(eod)
 			}
 
@@ -636,7 +680,7 @@ func (obj *LedgerPoint) SyncOrder(a Order) {
 		ARO:               a.ARO,
 		WReffRequestID:    "",
 		Message:           "",
-		EntryAt:           time.Now(),
+		EntryAt:           a.Timestamp,
 		OpenAt:            time.Now(),
 		RejectAt:          time.Now(),
 		AmmendAt:          time.Now(),
@@ -652,12 +696,12 @@ func (obj *LedgerPoint) SyncOrder(a Order) {
 func (obj *LedgerPoint) SyncOrderAck(a OrderAck) {
 	obj.ordersMu.Lock()
 	if order, exists := obj.orders[a.OrderNID]; exists {
-		order.OpenAt = time.Now()
+		order.OpenAt = a.Timestamp
 		order.State = "O"
 		obj.orders[a.OrderNID] = order
 		if order.PrevNID != 0 {
 			if prevOrder, exists := obj.orders[order.PrevNID]; exists {
-				prevOrder.AmmendAt = time.Now()
+				prevOrder.AmmendAt = a.Timestamp
 				prevOrder.State = "A"
 				obj.orders[order.PrevNID] = prevOrder
 			}
@@ -673,7 +717,7 @@ func (obj *LedgerPoint) SyncOrderAck(a OrderAck) {
 func (obj *LedgerPoint) SyncOrderNak(a OrderNak) {
 	obj.ordersMu.Lock()
 	if order, exists := obj.orders[a.OrderNID]; exists {
-		order.RejectAt = time.Now()
+		order.RejectAt = a.Timestamp
 		order.State = "R"
 		order.Message = a.Message
 		obj.orders[a.OrderNID] = order
@@ -688,7 +732,7 @@ func (obj *LedgerPoint) SyncOrderNak(a OrderNak) {
 func (obj *LedgerPoint) SyncOrderPending(a OrderPending) {
 	obj.ordersMu.Lock()
 	if order, exists := obj.orders[a.OrderNID]; exists {
-		order.WithdrawAt = time.Now()
+		order.PendingAt = a.Timestamp
 		order.State = "G"
 		obj.orders[a.OrderNID] = order
 	}
@@ -715,7 +759,7 @@ func (obj *LedgerPoint) SyncOrderWithdraw(a OrderWithdraw) {
 func (obj *LedgerPoint) SyncOrderWithdrawAck(a OrderWithdrawAck) {
 	obj.ordersMu.Lock()
 	if order, exists := obj.orders[a.OrderNID]; exists {
-		order.WithdrawAt = time.Now()
+		order.WithdrawAt = a.Timestamp
 		order.State = "W"
 		obj.orders[a.OrderNID] = order
 	}

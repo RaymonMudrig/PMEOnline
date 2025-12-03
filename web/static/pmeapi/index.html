@@ -13,121 +13,24 @@
             <p>Securities Borrowing & Lending Test Interface</p>
         </div>
 
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button class="btn btn-action btn-borrow" onclick="openModal('borrow')">📥 Entry Borrow</button>
+            <button class="btn btn-action btn-lend" onclick="openModal('lend')">📤 Entry Lend</button>
+            <button class="btn btn-action btn-amend" onclick="openModal('amend')">✏️ Amend Order</button>
+            <button class="btn btn-action btn-withdraw" onclick="openModal('withdraw')">🗑️ Withdraw Order</button>
+        </div>
+
         <div class="tabs">
-            <button class="tab active" onclick="showTab('borrow')">📥 Entry Borrow</button>
-            <button class="tab" onclick="showTab('lend')">📤 Entry Lend</button>
-            <button class="tab" onclick="showTab('orders')">📋 Order List</button>
+            <button class="tab active" onclick="showTab('orders')">📋 Order List</button>
             <button class="tab" onclick="showTab('contracts')">📜 Contract List</button>
             <button class="tab" onclick="showTab('sbl-detail')">📊 SBL Detail</button>
             <button class="tab" onclick="showTab('sbl-aggregate')">📈 SBL Aggregate</button>
             <button class="tab" onclick="showTab('notifications')">🔔 Notifications</button>
         </div>
 
-        <!-- Entry Borrow Tab -->
-        <div id="borrow" class="tab-content active">
-            <h2>Submit Borrowing Order</h2>
-            <form id="borrow-form" onsubmit="submitBorrowOrder(event)">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>Participant Code *</label>
-                        <select id="borr-participant" required onchange="loadAccountsByParticipant('borr')">
-                            <option value="">-- Select Participant --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Account Code *</label>
-                        <select id="borr-account" required>
-                            <option value="">-- Select Account --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Instrument Code *</label>
-                        <select id="borr-instrument" required>
-                            <option value="">-- Select Instrument --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Quantity (shares) *</label>
-                        <input type="number" id="borr-quantity" required min="1" step="1" placeholder="e.g., 1000">
-                    </div>
-                    <div class="form-group">
-                        <label>Rate *</label>
-                        <input type="text" id="borr-rate" value="18%" readonly style="background-color: #f8f9fa;">
-                    </div>
-                    <div class="form-group">
-                        <label>Settlement Date *</label>
-                        <input type="date" id="borr-settlement" required onchange="calculatePeriodeFromDates('borr')">
-                    </div>
-                    <div class="form-group">
-                        <label>Reimbursement Date *</label>
-                        <input type="date" id="borr-reimbursement" required onchange="calculatePeriodeFromDates('borr')">
-                    </div>
-                    <div class="form-group">
-                        <label>Periode (days) *</label>
-                        <input type="number" id="borr-periode" required min="1" placeholder="e.g., 30" onchange="calculateReimbursementFromPeriode('borr')">
-                    </div>
-                    <div class="form-group">
-                        <label>Auto Roll-Over (ARO) *</label>
-                        <select id="borr-aro" required>
-                            <option value="false">No</option>
-                            <option value="true">Yes</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="grid-column: 1 / -1;">
-                        <label>Instruction</label>
-                        <input type="text" id="borr-instruction" placeholder="Optional instructions">
-                    </div>
-                </div>
-                <div class="controls">
-                    <button type="submit" class="btn btn-primary">📥 Submit Borrow Order</button>
-                    <button type="button" class="btn btn-secondary" onclick="resetBorrowForm()">🔄 Reset</button>
-                </div>
-            </form>
-            <div id="borrow-status" class="status" style="display:none;"></div>
-        </div>
-
-        <!-- Entry Lend Tab -->
-        <div id="lend" class="tab-content">
-            <h2>Submit Lending Order</h2>
-            <form id="lend-form" onsubmit="submitLendOrder(event)">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>Participant Code *</label>
-                        <select id="lend-participant" required onchange="loadAccountsByParticipant('lend')">
-                            <option value="">-- Select Participant --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Account Code *</label>
-                        <select id="lend-account" required>
-                            <option value="">-- Select Account --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Instrument Code *</label>
-                        <select id="lend-instrument" required>
-                            <option value="">-- Select Instrument --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Quantity (shares) *</label>
-                        <input type="number" id="lend-quantity" required min="1" step="1" placeholder="e.g., 2000">
-                    </div>
-                    <div class="form-group">
-                        <label>Rate *</label>
-                        <input type="text" id="lend-rate" value="15%" readonly style="background-color: #f8f9fa;">
-                    </div>
-                </div>
-                <div class="controls">
-                    <button type="submit" class="btn btn-primary">📤 Submit Lend Order</button>
-                    <button type="button" class="btn btn-secondary" onclick="resetLendForm()">🔄 Reset</button>
-                </div>
-            </form>
-            <div id="lend-status" class="status" style="display:none;"></div>
-        </div>
-
         <!-- Order List Tab -->
-        <div id="orders" class="tab-content">
+        <div id="orders" class="tab-content active">
             <h2>Order List</h2>
             <div class="controls">
                 <input type="text" id="order-participant" placeholder="Participant Code" style="width: 150px;">
@@ -237,6 +140,209 @@
             </div>
             <div id="notifications-container" class="notifications-container">
                 <p class="no-notifications">No notifications yet. Click "Connect" to start receiving events.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Borrow Modal -->
+    <div id="borrow-modal" class="modal">
+        <div class="modal-backdrop" onclick="closeModal('borrow')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📥 Submit Borrowing Order</h2>
+                <button class="modal-close" onclick="closeModal('borrow')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="borrow-form" onsubmit="submitBorrowOrder(event)">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Participant Code *</label>
+                            <select id="borr-participant" required onchange="loadAccountsByParticipant('borr')">
+                                <option value="">-- Select Participant --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Account Code *</label>
+                            <select id="borr-account" required>
+                                <option value="">-- Select Account --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Instrument Code *</label>
+                            <select id="borr-instrument" required>
+                                <option value="">-- Select Instrument --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity (shares) *</label>
+                            <input type="number" id="borr-quantity" required min="1" step="1" placeholder="e.g., 1000">
+                        </div>
+                        <div class="form-group">
+                            <label>Rate *</label>
+                            <input type="text" id="borr-rate" value="18%" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label>Settlement Date *</label>
+                            <input type="date" id="borr-settlement" required onchange="calculatePeriodeFromDates('borr')">
+                        </div>
+                        <div class="form-group">
+                            <label>Reimbursement Date *</label>
+                            <input type="date" id="borr-reimbursement" required onchange="calculatePeriodeFromDates('borr')">
+                        </div>
+                        <div class="form-group">
+                            <label>Periode (days) *</label>
+                            <input type="number" id="borr-periode" required min="1" placeholder="e.g., 30" onchange="calculateReimbursementFromPeriode('borr')">
+                        </div>
+                        <div class="form-group">
+                            <label>Auto Roll-Over (ARO) *</label>
+                            <select id="borr-aro" required>
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label>Instruction</label>
+                            <input type="text" id="borr-instruction" placeholder="Optional instructions">
+                        </div>
+                    </div>
+                    <div id="borrow-status" class="status" style="display:none;"></div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary">📥 Submit Borrow Order</button>
+                        <button type="button" class="btn btn-secondary" onclick="resetBorrowForm()">🔄 Reset</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('borrow')">✖️ Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lend Modal -->
+    <div id="lend-modal" class="modal">
+        <div class="modal-backdrop" onclick="closeModal('lend')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📤 Submit Lending Order</h2>
+                <button class="modal-close" onclick="closeModal('lend')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="lend-form" onsubmit="submitLendOrder(event)">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Participant Code *</label>
+                            <select id="lend-participant" required onchange="loadAccountsByParticipant('lend')">
+                                <option value="">-- Select Participant --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Account Code *</label>
+                            <select id="lend-account" required>
+                                <option value="">-- Select Account --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Instrument Code *</label>
+                            <select id="lend-instrument" required>
+                                <option value="">-- Select Instrument --</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Quantity (shares) *</label>
+                            <input type="number" id="lend-quantity" required min="1" step="1" placeholder="e.g., 2000">
+                        </div>
+                        <div class="form-group">
+                            <label>Rate *</label>
+                            <input type="text" id="lend-rate" value="15%" readonly style="background-color: #f8f9fa;">
+                        </div>
+                    </div>
+                    <div id="lend-status" class="status" style="display:none;"></div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary">📤 Submit Lend Order</button>
+                        <button type="button" class="btn btn-secondary" onclick="resetLendForm()">🔄 Reset</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('lend')">✖️ Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Amend Modal -->
+    <div id="amend-modal" class="modal">
+        <div class="modal-backdrop" onclick="closeModal('amend')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Amend Order</h2>
+                <button class="modal-close" onclick="closeModal('amend')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="amend-form" onsubmit="submitAmendOrder(event)">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Order NID *</label>
+                            <input type="text" id="amend-order-nid" required placeholder="Enter Order NID" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group" id="amend-quantity-group">
+                            <label>New Quantity (shares)</label>
+                            <input type="number" id="amend-quantity" min="1" step="1" placeholder="Leave empty to keep current">
+                        </div>
+                        <div class="form-group" id="amend-settlement-group">
+                            <label>New Settlement Date</label>
+                            <input type="date" id="amend-settlement" onchange="calculatePeriodeFromDates('amend')">
+                        </div>
+                        <div class="form-group" id="amend-reimbursement-group">
+                            <label>New Reimbursement Date</label>
+                            <input type="date" id="amend-reimbursement" onchange="calculatePeriodeFromDates('amend')">
+                        </div>
+                        <div class="form-group" id="amend-periode-group">
+                            <label>New Periode (days)</label>
+                            <input type="number" id="amend-periode" min="1" placeholder="Leave empty to keep current" onchange="calculateReimbursementFromPeriode('amend')">
+                        </div>
+                        <div class="form-group" id="amend-aro-group">
+                            <label>New ARO Status</label>
+                            <select id="amend-aro">
+                                <option value="">-- Keep Current --</option>
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="amend-instruction-group" style="grid-column: 1 / -1;">
+                            <label>Instruction</label>
+                            <input type="text" id="amend-instruction" placeholder="Optional instructions">
+                        </div>
+                    </div>
+                    <div id="amend-status" class="status" style="display:none;"></div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary">✏️ Submit Amendment</button>
+                        <button type="button" class="btn btn-secondary" onclick="resetAmendForm()">🔄 Reset</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('amend')">✖️ Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Withdraw Modal -->
+    <div id="withdraw-modal" class="modal">
+        <div class="modal-backdrop" onclick="closeModal('withdraw')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🗑️ Withdraw Order</h2>
+                <button class="modal-close" onclick="closeModal('withdraw')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="withdraw-form" onsubmit="submitWithdrawOrder(event)">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Order NID *</label>
+                            <input type="number" id="withdraw-order-nid" required placeholder="Enter Order NID to withdraw">
+                        </div>
+                    </div>
+                    <div id="withdraw-status" class="status" style="display:none;"></div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary btn-danger">🗑️ Withdraw Order</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('withdraw')">✖️ Cancel</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
